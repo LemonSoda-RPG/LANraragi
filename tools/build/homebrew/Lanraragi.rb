@@ -45,6 +45,7 @@ class Lanraragi < Formula
     ENV["OPENSSL_PREFIX"] = Formula["openssl@3"].opt_prefix
     ENV["ARCHIVE_LIBARCHIVE_LIB_DLL"] = Formula["libarchive"].opt_lib/shared_library("libarchive")
     ENV["ALIEN_INSTALL_TYPE"] = "system"
+    ENV["npm_config_registry"] ||= "https://registry.npmmirror.com"
 
     imagemagick = Formula["imagemagick"]
     resource("Image::Magick").stage do
@@ -80,6 +81,14 @@ class Lanraragi < Formula
     libexec.install "script", "package.json", "public", "locales", "templates", "tests", "lrr.conf"
     libexec.install "tools/build/homebrew/redis.conf"
     bin.install "tools/build/homebrew/lanraragi"
+  end
+
+  service do
+    run [opt_bin/"lanraragi"]
+    keep_alive true
+    environment_variables PATH: "#{HOMEBREW_PREFIX}/bin:#{HOMEBREW_PREFIX}/sbin:/usr/local/bin:/usr/local/sbin:/usr/bin:/bin:/usr/sbin:/sbin"
+    log_path var/"log/lanraragi.log"
+    error_log_path var/"log/lanraragi.err.log"
   end
 
   test do

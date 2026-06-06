@@ -1,7 +1,8 @@
 #!/bin/bash
 
 # prefix/place where lrr is installed
-workdir=$(dirname $0)/$(dirname $(readlink $0))/../libexec
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+workdir="$(cd "${script_dir}/.." && pwd)/libexec"
 
 # default locations
 if [[ ${OSTYPE} == "darwin"* ]]; then
@@ -55,6 +56,7 @@ fi
 
 # @INC export
 export PERL5LIB="${workdir}/lib/perl5"
+export PATH="/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:/usr/bin:/bin:/usr/sbin:/sbin:${PATH}"
 
 # launch command
 redis-server "${workdir}/redis.conf" --logfile "${LRR_LOG_DIRECTORY}/redis.log" --dir "${LRR_DATABASE_DIRECTORY}"
