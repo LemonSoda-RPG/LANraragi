@@ -46,6 +46,8 @@ class Lanraragi < Formula
     ENV["ARCHIVE_LIBARCHIVE_LIB_DLL"] = Formula["libarchive"].opt_lib/shared_library("libarchive")
     ENV["ALIEN_INSTALL_TYPE"] = "system"
     ENV["npm_config_registry"] ||= "https://registry.npmmirror.com"
+    ENV["PERL_CPANM_HOME"] = var/"homebrew/lanraragi-cpanm"
+    ENV["PWD"] = HOMEBREW_PREFIX
 
     imagemagick = Formula["imagemagick"]
     resource("Image::Magick").stage do
@@ -65,9 +67,18 @@ class Lanraragi < Formula
       system "make", "install"
     end
 
-    system "cpanm", "Config::AutoConf", "--notest", "-l", libexec
-    system "npm", "install", *std_npm_args(prefix: false)
-    system "perl", "./tools/install.pl", "install-full"
+    mkdir_p libexec
+    mkdir_p ENV["PERL_CPANM_HOME"]
+    Dir.chdir(HOMEBREW_PREFIX) do
+      system "env", "PERL_CPANM_HOME=#{ENV["PERL_CPANM_HOME"]}",
+             Formula["perl"].opt_bin/"perl", Formula["cpanminus"].opt_bin/"cpanm",
+             "Config::AutoConf", "--notest", "-l", libexec
+    end
+
+    Dir.chdir(buildpath) do
+      system "npm", "install", *std_npm_args(prefix: false)
+      system "perl", "./tools/install.pl", "install-full"
+    end
 
     # Modify Archive::Libarchive to help find brew `libarchive`. Although environment
     # variables like `ARCHIVE_LIBARCHIVE_LIB_DLL` and `FFI_CHECKLIB_PATH` exist,
