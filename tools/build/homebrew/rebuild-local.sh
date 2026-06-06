@@ -6,6 +6,7 @@ tap_formula="/opt/homebrew/Library/Taps/jiacheng/homebrew-lanraragi-local/Formul
 source_formula="${repo_root}/tools/build/homebrew/Lanraragi.rb"
 local_head="head \"file://${repo_root}/.git\", using: :git, branch: \"dev\""
 formula="jiacheng/lanraragi-local/lanraragi"
+brew_env=(env HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_DEVELOPER=1)
 
 if [[ ! -f "${source_formula}" ]]; then
   echo "Formula not found: ${source_formula}" >&2
@@ -28,15 +29,15 @@ if brew list --versions lanraragi >/dev/null 2>&1; then
   installed_versions="$(brew list --versions lanraragi)"
   if [[ "${installed_versions}" == *"HEAD-"* ]]; then
     echo "Rebuilding installed LANraragi HEAD from local source..."
-    HOMEBREW_NO_AUTO_UPDATE=1 brew reinstall --build-from-source "${formula}"
+    "${brew_env[@]}" brew reinstall --build-from-source "${formula}"
   else
     echo "LANraragi is installed as a stable build; switching it to local HEAD..."
-    HOMEBREW_NO_AUTO_UPDATE=1 brew uninstall --force lanraragi
-    HOMEBREW_NO_AUTO_UPDATE=1 brew install --HEAD --build-from-source "${formula}"
+    "${brew_env[@]}" brew uninstall --force lanraragi
+    "${brew_env[@]}" brew install --HEAD --build-from-source "${formula}"
   fi
 else
   echo "Installing LANraragi HEAD from local source..."
-  HOMEBREW_NO_AUTO_UPDATE=1 brew install --HEAD --build-from-source "${formula}"
+  "${brew_env[@]}" brew install --HEAD --build-from-source "${formula}"
 fi
 
 echo "Restarting LANraragi service..."
