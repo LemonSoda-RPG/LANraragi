@@ -66,3 +66,43 @@ Open source server for archival of comics/manga, running on Mojolicious + Redis.
 * Scan for duplicates within your saved archives 
 
 * Backup your database as JSON to carry your tags over to another LANraragi instance.
+
+## Local Homebrew Workflow
+
+This fork includes a local Homebrew workflow for building LANraragi from the
+current checkout and managing it as a macOS user service.
+
+After editing local source code, rebuild and restart LANraragi with:
+
+```bash
+./tools/build/homebrew/rebuild-local.sh
+```
+
+The script will:
+
+* sync `tools/build/homebrew/Lanraragi.rb` into the local tap at
+  `/opt/homebrew/Library/Taps/jiacheng/homebrew-lanraragi-local/Formula/lanraragi.rb`;
+* point the tap formula's `head` to this checkout through `file://.../.git`;
+* install with `--HEAD` when LANraragi is not installed yet;
+* reinstall without `--HEAD` when the installed package is already a HEAD build;
+* switch a stable install to a local HEAD build when needed;
+* restart the Homebrew service after a successful build.
+
+Useful service commands:
+
+```bash
+brew services info jiacheng/lanraragi-local/lanraragi
+brew services restart jiacheng/lanraragi-local/lanraragi
+brew services stop jiacheng/lanraragi-local/lanraragi
+brew services start jiacheng/lanraragi-local/lanraragi
+```
+
+Useful paths:
+
+```text
+Web UI:      http://127.0.0.1:3000
+Data:        ~/Library/Application Support/LANraragi
+App log:     ~/Library/Logs/LANraragi/lanraragi.log
+Service log: /opt/homebrew/var/log/lanraragi.log
+Error log:   /opt/homebrew/var/log/lanraragi.err.log
+```
