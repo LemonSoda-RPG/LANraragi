@@ -97,6 +97,30 @@ brew services stop jiacheng/lanraragi-local/lanraragi
 brew services start jiacheng/lanraragi-local/lanraragi
 ```
 
+Runtime paths can be changed without rebuilding. The Homebrew launcher reads:
+
+```text
+~/.config/lanraragi/lanraragi.env
+```
+
+If the file does not exist, the launcher creates it from the packaged template at
+`/opt/homebrew/etc/lanraragi.env.example`. Edit `~/.config/lanraragi/lanraragi.env`
+and uncomment the paths you want to override:
+
+```bash
+export LRR_DATA_DIRECTORY="/path/to/content"
+export LRR_THUMB_DIRECTORY="/path/to/thumb"
+export LRR_DATABASE_DIRECTORY="/path/to/database"
+export LRR_LOG_DIRECTORY="/path/to/logs"
+export LRR_TEMP_DIRECTORY="/path/to/temp"
+```
+
+Apply path changes with:
+
+```bash
+brew services restart jiacheng/lanraragi-local/lanraragi
+```
+
 Useful paths:
 
 ```text

@@ -4,6 +4,20 @@
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 workdir="$(cd "${script_dir}/.." && pwd)/libexec"
 
+# Optional runtime configuration.
+# Use this file to override LRR_* paths without rebuilding the formula.
+_LRR_CONFIG_DIR="${XDG_CONFIG_HOME:-${HOME}/.config}/lanraragi"
+_LRR_ENV_FILE="${LRR_ENV_FILE:-${_LRR_CONFIG_DIR}/lanraragi.env}"
+_LRR_ENV_TEMPLATE="${LRR_ENV_TEMPLATE:-/opt/homebrew/etc/lanraragi.env.example}"
+if [[ ! -f "${_LRR_ENV_FILE}" && -f "${_LRR_ENV_TEMPLATE}" ]]; then
+  mkdir -p "$(dirname "${_LRR_ENV_FILE}")"
+  cp "${_LRR_ENV_TEMPLATE}" "${_LRR_ENV_FILE}"
+fi
+if [[ -f "${_LRR_ENV_FILE}" ]]; then
+  # shellcheck source=/dev/null
+  source "${_LRR_ENV_FILE}"
+fi
+
 # default locations
 if [[ ${OSTYPE} == "darwin"* ]]; then
   _LRR_DATA_DIRECTORY="${HOME}/Library/Application Support/LANraragi/content"

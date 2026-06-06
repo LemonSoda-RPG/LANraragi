@@ -91,6 +91,7 @@ class Lanraragi < Formula
     (libexec/"tools").install   "tools/openapi.yaml"
     libexec.install "script", "package.json", "public", "locales", "templates", "tests", "lrr.conf"
     libexec.install "tools/build/homebrew/redis.conf"
+    etc.install "tools/build/homebrew/lanraragi.env.example"
     bin.install "tools/build/homebrew/lanraragi"
   end
 
