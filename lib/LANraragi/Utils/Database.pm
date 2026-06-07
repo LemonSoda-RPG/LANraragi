@@ -40,13 +40,14 @@ sub add_archive_to_redis ( $id, $file, $redis, $redis_search ) {
 
     my $logger = get_logger( "Archive", "lanraragi" );
     my ( $name, $path, $suffix ) = fileparse( $file, qr/\.[^.]*/ );
+    my $decoded_name = LANraragi::Utils::Redis::redis_decode($name);
 
     # Initialize Redis hash for the added file
     $logger->debug("Pushing to redis on ID $id:");
-    $logger->debug("File Name: $name");
+    $logger->debug("File Name: $decoded_name");
     $logger->debug("Filesystem Path: $file");
 
-    $redis->hset( $id, "name",    LANraragi::Utils::Redis::redis_encode($name) );
+    $redis->hset( $id, "name",    LANraragi::Utils::Redis::redis_encode($decoded_name) );
     $redis->hset( $id, "tags",    "" );
     $redis->hset( $id, "summary", "" );
 
@@ -57,9 +58,8 @@ sub add_archive_to_redis ( $id, $file, $redis, $redis_search ) {
     # Don't encode filenames.
     $redis->hset( $id, "file", $file );
 
-    # Set title so that index is updated
-    # Throw a decode in there just in case the filename is already UTF8
-    set_title( $id, LANraragi::Utils::Redis::redis_decode($name) );
+    # Set title so that index is updated.
+    set_title( $id, $decoded_name );
 
     # New archives can't be in a tank, so add them to the search set by default
     $redis_search->sadd( "LRR_TANKGROUPED", $id );

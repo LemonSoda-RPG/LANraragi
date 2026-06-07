@@ -6,7 +6,7 @@ use strict;
 use warnings;
 use utf8;
 
-use Encode qw(decode_utf8 encode_utf8);
+use Encode qw(decode_utf8 encode_utf8 encode);
 use Unicode::Normalize qw(NFC);
 
 # Don't import anything from LANraragi here, this is used by Config and thus cycles are likely
@@ -33,7 +33,24 @@ sub redis_decode ($data) {
     # Do another UTF-8 decode just in case the data was double-encoded
     eval { $data = decode_utf8( $data, Encode::FB_CROAK ) };
 
+    $data = repair_mojibake($data);
+
     return $data;
+}
+
+sub repair_mojibake ($data) {
+
+    # Undo the common "UTF-8 bytes interpreted as Latin-1" failure mode.
+    # This shows up on macOS network volumes as strings like "ã" or "ä¸­".
+    return $data unless defined $data && $data =~ /[\x{0080}-\x{009F}]|[ÂÃãäåæçèéï][\x{0080}-\x{00FF}]/;
+
+    my $repaired;
+    eval {
+        my $bytes = encode( "ISO-8859-1", $data, Encode::FB_CROAK );
+        $repaired = decode_utf8( $bytes, Encode::FB_CROAK );
+    };
+
+    return defined $repaired ? $repaired : $data;
 }
 
 1;

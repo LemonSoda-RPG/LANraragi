@@ -89,7 +89,7 @@ sub get_tags {
     # lrr_info's file_path is taken straight from the filesystem, which might not be proper UTF-8.
     # Run a decode to make sure we can derive tags with the proper encoding.
     my $file     = Mojo::File->new( redis_decode( $lrr_info->{'file_path'} ) );
-    my $filename = $file->basename( '.' . $file->extname );
+    my $filename = redis_decode( $file->basename( '.' . $file->extname ) );
 
     my ( $tags, $title ) = parse_filename(
         $filename,

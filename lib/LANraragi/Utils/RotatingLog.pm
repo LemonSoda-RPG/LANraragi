@@ -285,9 +285,10 @@ sub get_handle {
         return $fh if $fh;
     }
 
-    # Fallback with default UTF-8 handle.
+    # Mojo::Log encodes formatted messages to UTF-8 before writing. Keep the
+    # handle raw to avoid double-encoding non-ASCII log messages.
     $fh = Mojo::File->new($path)->open('>>');
-    $fh->binmode(':encoding(UTF-8)');
+    $fh->binmode(':raw');
     return $fh;
 }
 
@@ -311,7 +312,7 @@ sub get_win32_fh {
     local *FH;
 
     Win32API::File::OsFHandleOpen( *FH, $h, "w" ) or die "OsFHandleOpen failed for $sPath; $!";
-    binmode *FH, ':encoding(UTF-8)';
+    binmode *FH, ':raw';
     return *FH;
 }
 

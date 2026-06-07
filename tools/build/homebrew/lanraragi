@@ -18,6 +18,12 @@ if [[ -f "${_LRR_ENV_FILE}" ]]; then
   source "${_LRR_ENV_FILE}"
 fi
 
+# launchd services often start with a minimal locale. Keep filename and log
+# encoding stable for UTF-8 paths.
+export LANG="${LANG:-en_US.UTF-8}"
+export LC_ALL="${LC_ALL:-en_US.UTF-8}"
+export LC_CTYPE="${LC_CTYPE:-UTF-8}"
+
 # default locations
 if [[ ${OSTYPE} == "darwin"* ]]; then
   _LRR_DATA_DIRECTORY="${HOME}/Library/Application Support/LANraragi/content"

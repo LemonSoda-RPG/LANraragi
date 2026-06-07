@@ -32,7 +32,7 @@ use LANraragi::Utils::Archive    qw(extract_thumbnail);
 use LANraragi::Utils::Database   qw(invalidate_cache compute_id change_archive_id get_arcsize add_timestamp_tag add_archive_to_redis add_arcsize add_pagecount);
 use LANraragi::Utils::Logging    qw(get_logger);
 use LANraragi::Utils::Generic    qw(is_archive exec_with_lock_pure);
-use LANraragi::Utils::Redis      qw(redis_encode);
+use LANraragi::Utils::Redis      qw(redis_encode redis_decode);
 use LANraragi::Utils::Path       qw(create_path open_path find_path get_archive_path);
 
 use LANraragi::Model::Config;
@@ -187,6 +187,14 @@ sub add_to_filemap ( $redis_cfg, $file ) {
 
         $logger->debug("Adding $file to Shinobu filemap.");
 
+        # Network filesystems can occasionally return stale directory entries:
+        # File::Find sees a path, but the file is already gone by the time we
+        # try to stat/open it. Skip those quietly.
+        unless ( -e $file ) {
+            $logger->debug("Skipping stale filesystem entry: $file");
+            return;
+        }
+
         #Freshly created files might not be complete yet.
         #We have to wait before doing any form of calculation.
         while (1) {
@@ -195,10 +203,12 @@ sub add_to_filemap ( $redis_cfg, $file ) {
             $logger->debug("Waiting for file to be openable");
             sleep(1);
         }
+        return unless -e $file;
 
         # Wait for file to be more than 512 KBs or bailout after 5s and assume that file is smaller
         my $cnt = 0;
         while (1) {
+            return unless -e $file;
             last if ( ( ( -s $file ) >= 512000 ) || $cnt >= 5 );
             $logger->debug("Waiting for file to be fully written");
             sleep(1);
@@ -215,7 +225,7 @@ sub add_to_filemap ( $redis_cfg, $file ) {
             $logger->error("Giving up on adding it to the filemap.");
             return;
         } elsif ($compute_error) {
-            $logger->warn("File $file no longer exists; giving up on adding it to the filemap.");
+            $logger->debug("File $file no longer exists; giving up on adding it to the filemap.");
             return;
         }
 
@@ -290,8 +300,9 @@ sub update_filemap_entry ( $logger, $id, $file, $redis_cfg, $redis_arc ) {
             $logger->debug("Filesystem: $file");
             $logger->debug("Database: $filecheck");
             my ( $name, $path, $suffix ) = fileparse( $file, qr/\.[^.]*/ );
+            my $decoded_name = redis_decode($name);
             $redis_arc->hset( $id, "file", $file );
-            $redis_arc->hset( $id, "name", redis_encode($name) );
+            $redis_arc->hset( $id, "name", redis_encode($decoded_name) );
             $redis_arc->wait_all_responses;
             invalidate_cache();
         }
