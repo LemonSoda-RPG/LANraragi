@@ -27,6 +27,11 @@ Edit.initializeAll = function () {
     $(document).on("paste.tagger", ".tagger-new", Edit.handlePaste);
     $(document).on("keydown.run-plugin-enter", "#arg", Edit.runPluginByEnter);
 
+    const lastPlugin = window.localStorage.getItem("last-plugin-id");
+    if (lastPlugin && $(`#plugin option[value=${lastPlugin}]`).length) {
+        $("#plugin").val(lastPlugin);
+    }
+
     if (Edit.isTank) {
         $(document).on("click.add-archive", "#add-archive-btn", Edit.addArchiveToTank);
         $(document).on("click.remove-archive", ".remove-archive", Edit.removeArchiveFromTank);
@@ -83,7 +88,6 @@ Edit.initSortable = function () {
 };
 
 Edit.addArchiveToTank = function () {
-    const tankId = $("#archiveID").val();
     const arcId = $("#add-archive-id").val().trim();
     if (!arcId) return;
 
@@ -100,6 +104,9 @@ Edit.addArchiveToTank = function () {
                     <img style="height:300px" src='${new LRR.ApiURL("/api/archives/"+arcId+"/thumbnail")}'
                         onerror="this.src='${new LRR.ApiURL("/img/noThumb.png")}'">
                 </div>
+                <a class="edit-archive-link" title="${I18N.EditArchiveMetadata}" href="${new LRR.ApiURL(`/edit?id=${arcId}`)}" target="_blank" rel="noopener">
+                    <i class="fas fa-pencil-alt"></i>
+                </a>
                 <a class="remove-archive" title="${I18N.TankoubonRemoveFromMenu}">	
                     <i class="fas fa-close" style="text-align:right"></i>
                 </a>
@@ -233,8 +240,6 @@ Edit.saveMetadata = function () {
     Edit.hideTags();
     const id = $("#archiveID").val();
 
-    let fetchPromise;
-
     if (Edit.isTank) {
         const metadata = {
             name: $("#title").val(),
@@ -289,6 +294,7 @@ Edit.getTags = function () {
     Edit.hideTags();
 
     const pluginID = $("select#plugin option:checked").val();
+    window.localStorage.setItem("last-plugin-id", pluginID);
     const archivID = $("#archiveID").val();
     const pluginArg = $("#arg").val();
     Server.callAPI(`/api/plugins/use?plugin=${pluginID}&id=${archivID}&arg=${pluginArg}`, "POST", null, I18N.EditFetchTagError,
@@ -297,7 +303,7 @@ Edit.getTags = function () {
                 $("#title").val(result.data.title);
                 LRR.toast({
                     heading: I18N.EditTitleChangedTo,
-                    text: result.data.title,
+                    text: LRR.encodeHTML(result.data.title),
                     icon: "info",
                 });
             }
@@ -317,14 +323,14 @@ Edit.getTags = function () {
 
                 LRR.toast({
                     heading: I18N.EditTagsAdded,
-                    text: result.data.new_tags,
+                    text: LRR.encodeHTML(result.data.new_tags),
                     icon: "info",
                     hideAfter: 7000,
                 });
             } else {
                 LRR.toast({
                     heading: I18N.EditNoNewTags,
-                    text: result.data.new_tags,
+                    text: LRR.encodeHTML(result.data.new_tags),
                     icon: "info",
                 });
             }

@@ -9,15 +9,18 @@ import I18N from "i18n";
 import * as marked from "marked";
 import DOMPurify from "dompurify";
 
-let selectedCategory = "";
-let awesomplete = {};
+export let selectedCategory = "";
 let carouselInitialized = false;
+let carouselGeneration = 0;
 let swiper = {};
 let serverVersion = "";
 let debugMode = false;
 export let pageSize = 100;
 export let isMultiSelectMode = false;
 export let selectedArchives = new Set();
+
+const CAROUSEL_RETRY_DELAY_MS = 1500;
+const CAROUSEL_MAX_RETRIES = 10;
 
 /**
  * Initialize the Archive Index.
@@ -53,6 +56,11 @@ export function initializeAll() {
         e.stopImmediatePropagation();
         const id = $(this).closest("[id]").attr("id");
         if (id) toggleArchiveSelection(id);
+    });
+
+    // Mark carousel-originated reader links so Reader can decide whether to enable cross-archive navigation
+    $(document).on("click.carousel-navstate", ".swiper-wrapper .swiper-slide a[href*='/reader?id=']", () => {
+        sessionStorage.setItem("navigationState", "carousel");
     });
 
     // 0 = List view
@@ -172,6 +180,7 @@ export function initializeAll() {
                             click() {
                                 localStorage.hidecompleted = $(this).is(":checked");
                                 IndexTable.dataTable.draw();
+                                updateCarousel();
                             },
                         },
                     },
@@ -184,6 +193,7 @@ export function initializeAll() {
                             click() {
                                 localStorage.grouptanks = $(this).is(":checked");
                                 IndexTable.dataTable.draw();
+                                updateCarousel();
                             },
                         },
                     },
@@ -267,7 +277,7 @@ export function bookmarkIconOff(arcid) {
     icons.forEach(el => {
         el.classList.remove("fas");
         el.classList.add("far");
-    })
+    });
 }
 
 // Turn bookmark icons to ON for all archives.
@@ -276,12 +286,12 @@ export function bookmarkIconOn(arcid) {
     icons.forEach(el => {
         el.classList.remove("far");
         el.classList.add("fas");
-    })
+    });
 }
 
 export function toggleBookmarkStatusByIcon(e) {
     const icon = e.currentTarget;
-    const id = icon.id;
+    const {id} = icon;
 
     if (!LRR.isUserLogged()) {
         LRR.toast({
@@ -332,12 +342,14 @@ export function loadTagSuggestions() {
             const namespacesSet = new Set(data.map((element) => (element.namespace === "parody" ? "series" : element.namespace)));
             namespacesSet.forEach((element) => {
                 if (element !== "") {
-                    $("#namespace-sortby").append(`<option value="${element}">${element.charAt(0).toUpperCase() + element.slice(1)}</option>`);
+                    const encodedNs = LRR.encodeHTML(element);
+                    const nsLabel = LRR.encodeHTML(element.charAt(0).toUpperCase() + element.slice(1));
+                    $("#namespace-sortby").append(`<option value="${encodedNs}">${nsLabel}</option>`);
                 }
             });
 
             // Setup awesomplete for the tag search bar
-            awesomplete = new Awesomplete("#search-input", {
+            new Awesomplete("#search-input", {
                 list: data,
                 data(tag) {
                     // Format tag objects from the API into a format awesomplete likes.
@@ -439,36 +451,41 @@ export function updateCarousel(e) {
     // Hit a different API endpoint depending on the requested localStorage carousel type
     let endpoint;
     const filter = IndexTable.currentSearch ? `&filter=${IndexTable.currentSearch}` : "";
-    const category = selectedCategory ? `&category=${selectedCategory}` : "";
+
+    // See LANraragi::Controller::Api::Search::handle_databases
+    const isBuiltinSelector = selectedCategory === "NEW_ONLY" || selectedCategory === "UNTAGGED_ONLY";
+    const category = (selectedCategory && !isBuiltinSelector) ? `&category=${selectedCategory}` : "";
+
+    // Mirror index setting toggles and special categories so carousels respect them too (when relevant)
+    const groupTanks = localStorage.grouptanks === "false" ? "&groupby_tanks=false" : "";
+    const hideCompleted = localStorage.hidecompleted === "true" ? "&hidecompleted=true" : "";
+    const newOnly = selectedCategory === "NEW_ONLY" ? "&newonly=true" : "";
+    const untaggedOnly = selectedCategory === "UNTAGGED_ONLY" ? "&untaggedonly=true" : "";
 
     switch (localStorage.carouselType) {
         case "random":
             $("#carousel-icon")[0].classList = "fas fa-random";
             $("#carousel-title").text(I18N.CarouselRandom);
-            endpoint = `/api/search/random?count=15${filter}${category}`;
-
-            // Special categories that imply additional query params
-            if (selectedCategory === "NEW_ONLY") {
-                endpoint += "&newonly=true";
-            } else if (selectedCategory === "UNTAGGED_ONLY") {
-                endpoint += "&untaggedonly=true";
-            }
+            endpoint = `/api/search/random?count=15${filter}${category}${groupTanks}${hideCompleted}${newOnly}${untaggedOnly}`;
 
             break;
         case "inbox":
             $("#carousel-icon")[0].classList = "fas fa-envelope-open-text";
             $("#carousel-title").text(I18N.NewArchives);
-            endpoint = `/api/search?newonly=true&sortby=date_added&order=desc&start=-1${filter}${category}`;
+            // newonly always true here by design
+            endpoint = `/api/search?newonly=true&sortby=date_added&order=desc&start=-1${filter}${category}${groupTanks}${hideCompleted}${untaggedOnly}`;
             break;
         case "untagged":
             $("#carousel-icon")[0].classList = "fas fa-edit";
             $("#carousel-title").text(I18N.UntaggedArchives);
-            endpoint = `/api/search?untaggedonly=true&sortby=date_added&order=desc&start=-1${filter}${category}`;
+            // untaggedonly always true here by design
+            endpoint = `/api/search?untaggedonly=true&sortby=date_added&order=desc&start=-1${filter}${category}${groupTanks}${hideCompleted}${newOnly}`;
             break;
         case "ondeck":
             $("#carousel-icon")[0].classList = "fas fa-book-reader";
             $("#carousel-title").text(I18N.CarouselOnDeck);
-            endpoint = `/api/search?sortby=lastread&hidecompleted=true${filter}`;
+            // hidecompleted always true here by design
+            endpoint = `/api/search?sortby=lastread&hidecompleted=true${filter}${groupTanks}${untaggedOnly}${newOnly}`;
             break;
         default:
             $("#carousel-icon")[0].classList = "fas fa-pastafarianism";
@@ -478,24 +495,65 @@ export function updateCarousel(e) {
     }
 
     if (carouselInitialized) {
-        Server.callAPI(endpoint, "GET", null, I18N.CarouselError,
-            (results) => {
-                swiper.virtual.removeAllSlides();
-                const slides = results.data
-                    .map((archive) => LRR.buildThumbnailDiv(archive));
-                swiper.virtual.appendSlide(slides);
-                swiper.virtual.update();
-
-                if (results.data.length === 0) {
-                    $("#carousel-empty").show();
-                }
-
-                $("#carousel-loading").hide();
-                $(".swiper-wrapper").show();
-                $("#reload-carousel").removeClass("fa-spin");
-            },
-        );
+        carouselGeneration += 1;
+        loadCarousel(endpoint, carouselGeneration);
     }
+}
+
+/**
+ * Fetch and render the carousel, retry nonblock while search engine initializes
+ * @param {string} endpoint Search API endpoint for the current carousel type
+ * @param {number} generation token identifying this carousel refresh
+ */
+async function loadCarousel(endpoint, generation) {
+    try {
+        for (let attempt = 0; attempt <= CAROUSEL_MAX_RETRIES; attempt++) {
+            if (attempt > 0) {
+                await new Promise((resolve) => setTimeout(resolve, CAROUSEL_RETRY_DELAY_MS));
+            }
+
+            const response = await fetch(new LRR.ApiURL(endpoint), { method: "GET" });
+
+            // Search engine still initializing: back off and retry
+            if (response.status === 204) { continue; }
+            if (!response.ok) {
+                throw new Error(`${response.status} ${response.statusText}`);
+            }
+
+            const results = await response.json();
+            // Only render if a newer load hasn't superseded this one
+            if (generation !== carouselGeneration) { return; }
+            renderCarousel(results);
+            return;
+        }
+
+        throw new Error(`Search engine not initialized after ${CAROUSEL_MAX_RETRIES * CAROUSEL_RETRY_DELAY_MS}ms`);
+    } catch (error) {
+        if (generation !== carouselGeneration) { return; }
+        LRR.showErrorToast(I18N.CarouselError, error);
+        $("#carousel-loading").hide();
+        $("#reload-carousel").removeClass("fa-spin");
+    }
+}
+
+/**
+ * Render carousel slides from a search API result.
+ * @param {{data: Array}} results Search API response payload.
+ */
+function renderCarousel(results) {
+    swiper.virtual.removeAllSlides();
+    const slides = results.data
+        .map((archive) => LRR.buildThumbnailDiv(archive));
+    swiper.virtual.appendSlide(slides);
+    swiper.virtual.update();
+
+    if (results.data.length === 0) {
+        $("#carousel-empty").show();
+    }
+
+    $("#carousel-loading").hide();
+    $(".swiper-wrapper").show();
+    $("#reload-carousel").removeClass("fa-spin");
 }
 
 // #endregion
@@ -593,6 +651,9 @@ export function exitSelectionCarouselMode() {
     // Hide MSM controls
     $("#msm-carousel-controls").hide();
 
+    // Update msm flag
+    isMultiSelectMode = false;
+
     // Reload normal carousel content
     updateCarousel();
 
@@ -611,9 +672,11 @@ export function toggleArchiveSelection(id) {
         removeArchiveFromSelection(id);
     } else {
         selectedArchives.add(id);
-        // Find archive data from DataTables to build the carousel slide
+        // Find archive data from DataTables to build the carousel slide.
+        // If there's nothing in DT (because we're adding something from the current carousel instead),
+        // fallback to the shared data cache. 
         const row = IndexTable.dataTable.row(`#${id}`);
-        const data = row.data();
+        const data = row.data() || LRR.getArchiveData(id);
         if (data) {
             addArchiveToSelection(data);
         }
@@ -810,8 +873,7 @@ function mergeSelectionIntoTankoubon() {
 function addArchivesToTank(tankId, arcIds) {
     arcIds.reduce((chain, arcId) =>
         chain.then(() =>
-            Server.callAPI(`/api/tankoubons/${tankId}/${arcId}`, "PUT",
-                null, I18N.MSMMergeAddError, null)
+            Server.callAPISilent(`/api/tankoubons/${tankId}/${arcId}`, "PUT")
         ),
     Promise.resolve()
     ).then(() => {
@@ -820,7 +882,8 @@ function addArchivesToTank(tankId, arcIds) {
         clearSelection();
         exitSelectionCarouselMode();
         IndexTable.doSearch();
-    });
+    })
+        .catch((error) => LRR.showErrorToast(I18N.MSMMergeAddError, error));
 };
 
 // #endregion
@@ -961,7 +1024,7 @@ export function migrateProgress() {
                         return null;
                     }
                     if (!response.ok) {
-                        // eslint-disable-next-line no-console
+                         
                         console.warn(`Failed to migrate progress for ${id} (status ${response.status})`);
                         return null;
                     }
@@ -993,14 +1056,12 @@ export function migrateProgress() {
             hideAfter: 13000,
         }));
     } else {
-        // eslint-disable-next-line no-console
+         
         console.log("No local reading progression to migrate");
     }
 }
 
 // #endregion
-
-
 
 // #region Category buttons
 

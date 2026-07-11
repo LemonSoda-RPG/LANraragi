@@ -47,6 +47,7 @@ function handleContextMenu(option, id) {
             handleDelete(id);
             break;
         case "read":
+            sessionStorage.setItem("navigationState", window.contextMenuSource === "carousel" ? "carousel" : "datatables");
             LRR.openInNewTab(new LRR.ApiURL(`/reader?id=${id}`));
             break;
         case "download":
@@ -117,12 +118,15 @@ function loadContextMenuCategories(catList, id){
 
 /**
  * Build rating options for contextMenu and select the one for the current ID.
- * @param {*} id The ID of the archive to check
+ * @param {*} id The ID of the archive or tankoubon to check
  * @param {*} refreshCallback Optional callback to refresh the view after rating change
  * @returns Ratings
  */
 function loadContextMenuRatings(id, refreshCallback) {
-    return Server.callAPI(`/api/archives/${id}/metadata`, "GET", null, I18N.IndexIdLoadError(id),
+    const isTankoubon = id.startsWith("TANK_");
+    const endpoint = isTankoubon ? `/api/tankoubons/${id}` : `/api/archives/${id}/metadata`;
+
+    return Server.callAPI(endpoint, "GET", null, I18N.IndexIdLoadError(id),
         (data) => {
             const items = {};
             const ratings = [{
@@ -152,7 +156,10 @@ function loadContextMenuRatings(id, refreshCallback) {
                         if(i === 0) delete tags["rating"];
                         else tags["rating"] = [ratings[i].name];
 
-                        Server.updateTagsFromArchive(id, LRR.buildTagList(tags));
+                        if (isTankoubon) 
+                            Server.updateTagsFromTankoubon(id, LRR.buildTagList(tags));
+                        else 
+                            Server.updateTagsFromArchive(id, LRR.buildTagList(tags));
 
                         if (refreshCallback) {
                             refreshCallback();
@@ -197,6 +204,15 @@ export function initialize(catListData) {
     // Initialize context menu
     $.contextMenu({
         selector: ".context-menu",
+        events: {
+            // Record whether this context menu was opened from the carousel or datatables,
+            // so Reader can later decide whether to enable cross-archive navigation.
+            show: function (_options) {
+                window.contextMenuSource = $(this).closest(".swiper-wrapper").length > 0
+                    ? "carousel"
+                    : "datatables";
+            }
+        },
         build: ($trigger, _e) => {
             const id = $trigger.attr("id");
             const isTankoubon = id && id.startsWith("TANK_");
@@ -245,17 +261,16 @@ export function initialize(catListData) {
                         "icon": "fas fa-search-plus",
                         "items": loadContextMenuCategories(catList, id)
                     }
-                }
+                };
                 Object.assign(items, moreItems);
             }
 
             return {
                 callback: function (key, _options) {
-                    handleContextMenu(key, $(this)
-                        .attr("id"));
+                    handleContextMenu(key, $(this).attr("id"));
                 },
                 items: items,
-            }
+            };
         }
     });
 }

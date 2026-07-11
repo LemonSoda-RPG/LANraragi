@@ -16,6 +16,8 @@ let showingSinglePage = true;
 let pageThumbnails = [];
 let preloadedImg = {};
 let preloadedSizes = {};
+let archiveIndex = -1;
+let archiveIds = [];
 let spaceScroll = { timeout: null, animationId: null };
 //Spacebar Scroll Config
 let scrollConfig = {
@@ -51,8 +53,9 @@ let markersVisible = false;
 let markers = [];
 let overlayFiltered = false;
 let pageNaviState = true;
+let wakeLock = null;
 
-export function initializeAll(trackProgressLocally, authenticateProgress) {
+export async function initializeAll(trackProgressLocally, authenticateProgress) {
     state.trackProgressLocally = trackProgressLocally;
     state.authenticateProgress = authenticateProgress;
 
@@ -85,7 +88,11 @@ export function initializeAll(trackProgressLocally, authenticateProgress) {
     $(document).on("click.auto-next-page", "#auto-next-page-apply", registerAutoNextPage);
 
     $(document).on("click.close-overlay", "#overlay-shade", LRR.closeOverlay);
-    $(document).on("click.toggle-full-screen", "#toggle-full-screen", () => toggleFullScreen());
+    $(document).on("click.toggle-full-screen", "#toggle-full-screen", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        toggleFullScreen();
+    });
     $(document).on("click.toggle-auto-next-page", ".toggle-auto-next-page", toggleAutoNextPage);
     $(document).on("click.toggle-archive-overlay", "#toggle-archive-overlay", toggleArchiveOverlay);
     $(document).on("click.toggle-settings-overlay", "#toggle-settings-overlay", toggleSettingsOverlay);
@@ -147,7 +154,7 @@ export function initializeAll(trackProgressLocally, authenticateProgress) {
         // Stop event propagation to avoid going to page
         e.stopPropagation();
     });
-    $(document).on("click.edit-toc", ".edit-toc", (e) => addTocSection(currentChapter.startPage, currentChapter.name));
+    $(document).on("click.edit-toc", ".edit-toc", () => addTocSection(currentChapter.startPage, currentChapter.name));
     $(document).on("click.remove-toc", ".remove-toc", removeTocSection);
 
     $(document).on("click.set-thumbnail", ".set-thumbnail", (e) => {
@@ -221,7 +228,8 @@ export function initializeAll(trackProgressLocally, authenticateProgress) {
             markerMode = false;
             if (result.isConfirmed && result.value.trim() !== "") {
                 const { arcId, localPage } = getArchiveForPage(page);
-                Server.callAPI(`/api/archives/${arcId}/stamps/${localPage}?position=${markerData.x},${markerData.y}&content=${result.value}`, "PUT", "Stamp added!", I18N.StampError,
+                Server.callAPI(`/api/archives/${arcId}/stamps/${localPage}?position=${markerData.x},${markerData.y}&content=${result.value}`, 
+                    "PUT", "Stamp added!", I18N.StampError,
                     (data) => {
                         markerData.id = data["stamp_id"];
                         markerData.name = result.value;
@@ -252,6 +260,10 @@ export function initializeAll(trackProgressLocally, authenticateProgress) {
     });
     $(document).on("click.filter-stamped", "#filter-stamped", filterStampedOverlay);
 
+    // Return to index, re-applying the search/page state the user came from
+    $(document).on("click.return-to-index", "#return-to-index", () => {
+        returnToIndex();
+    });
 
     // Apply full-screen utility
     // F11 Fullscreen is totally another "Fullscreen", so its support is beyong consideration.
@@ -267,6 +279,9 @@ export function initializeAll(trackProgressLocally, authenticateProgress) {
     id = params.get("id");
     force = params.get("force_reload") !== null;
     currentPage = (+params.get("p") || 1) - 1;
+
+    // Set up archive navigation state from the entry source (datatables vs carousel vs direct nav)
+    await setupArchiveNavigation();
 
     // Remove the "new" tag with an api call (archives only; tanks don't have an isnew flag)
     if (!id.startsWith("TANK_"))
@@ -322,7 +337,10 @@ export function initializeAll(trackProgressLocally, authenticateProgress) {
                     }
 
                     let tagList = LRR.buildTagList(tags);
-                    Server.updateTagsFromArchive(id, tagList);
+                    if (id.startsWith("TANK_")) 
+                        Server.updateTagsFromTankoubon(id, tagList);
+                    else 
+                        Server.updateTagsFromArchive(id, tagList);
                     $("#tagContainer > table").replaceWith(LRR.buildTagsDiv(tagList.join(",")));
                 }
             }).init();
@@ -362,7 +380,7 @@ export function loadContentData() {
         } else {
             progress = data.progress - 1;
         }
-    }
+    };
 
     // If the ID is a Tank ID (TANK_xxxx), use the Tankoubon API for metadata
     if (id.startsWith("TANK_")) {
@@ -438,7 +456,7 @@ export function addCategoryBadge(categoryId) {
     const url = new LRR.ApiURL(`/?c=${categoryId}`);
     const html = `<div class="gt" style="font-size:14px; padding:4px">
         <a href="${url}">
-        <span class="label">${categoryName}</span>
+        <span class="label">${LRR.encodeHTML(categoryName)}</span>
         <a href="#" class="remove-category" data-id="${categoryId}"
             style="margin-left:4px; margin-right:2px">×</a>
     </a>`;
@@ -555,6 +573,12 @@ export function loadImages() {
         }
 
         if (showOverlayByDefault) { toggleArchiveOverlay(); }
+
+        // Resume slideshow if it was active before cross-archive navigation
+        if (sessionStorage.getItem("autoNextPage") === "true") {
+            sessionStorage.removeItem("autoNextPage");
+            startAutoNextPage();
+        }
     };
 
     const onFinally = () => {
@@ -635,7 +659,7 @@ export function initializeSettings() {
 
 function initFullscreen() {
     // Apply full-screen utility
-    // F11 Fullscreen is totally another "Fullscreen", so its support is beyong consideration.
+    // F11 Fullscreen is totally another "Fullscreen", so its support is beyond consideration.
     // Small override function, always returns boolean
     fscreen.inFullscreen = () => !!fscreen.fullscreenElement;
     if (!fscreen.fullscreenEnabled) {
@@ -716,9 +740,18 @@ function handleShortcuts(e) {
     if (e.target.tagName === "INPUT") {
         return;
     }
+
+    switch (e.key) {
+        case ",":
+            readPreviousArchive();
+            return;
+        case ".":
+            readNextArchive();
+            return;
+    }
     switch (e.which) {
         case 8: // backspace
-            document.location.href = $("#return-to-index").attr("href");
+            returnToIndex();
             break;
         case 27: // escape
             LRR.closeOverlay();
@@ -727,19 +760,35 @@ function handleShortcuts(e) {
             spaceScrollProcessInput(e);
             break;
         case 37: // left arrow
-            changePage(-1, true);
+            if (e.shiftKey) {
+                changePage("first", true);
+            } else {
+                changePage(-1, true);
+            }
             break;
         case 39: // right arrow
-            changePage(1, true);
+            if (e.shiftKey) {
+                changePage("last", true);
+            } else {
+                changePage(1, true);
+            }
             break;
         case 65: // a
-            changePage(-1, true);
+            if (e.shiftKey) {
+                changePage("first", true);
+            } else {
+                changePage(-1, true);
+            }
             break;
         case 66: // b
             toggleBookmark(e);
             break;
         case 68: // d
-            changePage(1, true);
+            if (e.shiftKey) {
+                changePage("last", true);
+            } else {
+                changePage(1, true);
+            }
             break;
         case 70: // f
             toggleFullScreen();
@@ -774,6 +823,7 @@ function handleShortcuts(e) {
             break;
         case 82: // r
             if (e.ctrlKey || e.shiftKey || e.metaKey) { break; }
+            sessionStorage.removeItem("navigationState");
             document.location.href = new LRR.ApiURL("/random");
             break;
         case 83: // s
@@ -910,6 +960,14 @@ function checkFiletypeSupport(extension) {
             closeOnClick: false,
             draggable: false,
         });
+    } else if (extension === "cbw" && !localStorage.cbwWarningShown) {
+        localStorage.cbwWarningShown = true;
+        LRR.toast({
+            heading: I18N.ReaderCbwWarning,
+            text: I18N.ReaderCbwWarningDesc,
+            icon: "info",
+            hideAfter: 20000,
+        });
     }
 }
 
@@ -928,6 +986,7 @@ function toggleHelp() {
 
 function addStamp() {
     if (infiniteScroll) return;
+    if (!LRR.isUserLogged()) return;
     markerMode = true;
     clearMarkers();
     $(".reader-image").css("cursor", "cell");
@@ -953,7 +1012,6 @@ function createMarkerElement(markerData, index) {
     const xPx = (markerData.x / 100) * rect.width;
     const yPx = (markerData.y / 100) * rect.height;
 
-    const displayRect = display.getBoundingClientRect();
     const containerRect = container.getBoundingClientRect();
 
     let leftFix = rect.left - containerRect.left;
@@ -965,8 +1023,8 @@ function createMarkerElement(markerData, index) {
         leftFix += img.width+2;
     }
 
-    marker.style.left = `${rect.left + xPx - displayRect.left + leftFix}px`;
-    marker.style.top = `${rect.top + yPx - displayRect.top + topFix}px`;
+    marker.style.left = `${leftFix + xPx}px`;
+    marker.style.top = `${topFix + yPx}px`;
 
     marker.title = markerData.name;
     marker.dataset.index = index;
@@ -1040,7 +1098,7 @@ function createMarkerElement(markerData, index) {
 }
 
 function renderMarkers() {
-    if (infiniteScroll) return;
+    if (infiniteScroll || fscreen.inFullscreen()) return;
     // Clean markers
     const existing = document.querySelectorAll(".marker");
     existing.forEach(el => el.remove());
@@ -1077,8 +1135,8 @@ function loadStamps(currentPage) {
                 let y = data.result[i].position.split(",")[1];
                 markerData.x = x;
                 markerData.y = y;
-                markerData.name = data.result[i].content
-                markerData.id = data.result[i].id
+                markerData.name = data.result[i].content;
+                markerData.id = data.result[i].id;
                 markerData.left = true;
                 markers.push(markerData);
             }
@@ -1096,8 +1154,8 @@ function loadStamps(currentPage) {
                             let y = data.result[i].position.split(",")[1];
                             markerData.x = x;
                             markerData.y = y;
-                            markerData.name = data.result[i].content
-                            markerData.id = data.result[i].id
+                            markerData.name = data.result[i].content;
+                            markerData.id = data.result[i].id;
                             markerData.left = false;
                             markers.push(markerData);
                         }
@@ -1222,15 +1280,15 @@ function loadBookmarkStatus() {
                             bookmark.setAttribute("style", "opacity: 0.5; cursor: not-allowed;");
                         }
                         leftOption.appendChild(bookmark);
-                    })
-                })
+                    });
+                });
         }
-    )
+    );
 }
 
 function updateMetadata() {
     const img = $("#img")[0];
-    const filename = img.dataset.filename;
+    const {filename} = img.dataset;
 
     const imgDoublePage = $("#img_doublepage")[0];
     const filenameDoublePage = imgDoublePage.dataset.filename;
@@ -1287,30 +1345,40 @@ function updateMetadata() {
 async function goToPage(page) {
     previousPage = currentPage;
     currentPage = Math.min(maxPage, Math.max(0, +page));
-    showingSinglePage = false;
 
     if (infiniteScroll) {
         $("#display img").get(currentPage).scrollIntoView({ block: "nearest" });
     } else {
-        $("#img_doublepage").attr("src", "");
-        $("#img_doublepage").attr("data-filename", "");
-        $("#display").removeClass("double-mode");
         if (doublePageMode && currentPage > 0
             && currentPage < maxPage) {
+
+            // Special case when going backwards and already showing a widespread, 
+            // we need to go back by two pages to show the previous double-page spread
+            if (showingSinglePage && previousPage > currentPage) 
+                currentPage = Math.max(0, currentPage - 1);
+
             // Composite an image and use that as the source
             const img1 = await loadImage(currentPage);
             const img1Filename = getFilename(currentPage);
+            const img1Size = await getImageSize(img1);
             const img2 = await loadImage(currentPage + 1);
             const img2Filename = getFilename(currentPage + 1);
-            // If w > h on one of the images(widespread), set canvasdata to the first image only
-            if (img1.naturalWidth > img1.naturalHeight || img2.naturalWidth > img2.naturalHeight) {
+            const img2Size = await getImageSize(img2);
+            // If w > h on one of the images(widespread), set canvasdata to the first(or second) image only
+            if (img1Size.width > img1Size.height || img2Size.width > img2Size.height) {
                 // Depending on whether we were going forward or backward, display img1 or img2
                 const wideSrc = previousPage > currentPage ? img2 : img1;
                 const wideFilename = previousPage > currentPage ? img2Filename : img1Filename;
                 $("#img").attr("src", wideSrc);
                 $("#img").attr("data-filename", wideFilename);
+                $("#display").removeClass("double-mode");
+                $("#img_doublepage").attr("src", "");
+                $("#img_doublepage").attr("data-filename", "");
                 showingSinglePage = true;
+                // Adjust currentPage to the page of the image being displayed (don't jump by 2 anymore)
+                currentPage = previousPage > currentPage ? currentPage + 1 : currentPage;
             } else {
+                $("#display").addClass("double-mode");
                 if (mangaMode) {
                     $("#img").attr("src", img2);
                     $("#img").attr("data-filename", img2Filename);
@@ -1322,13 +1390,16 @@ async function goToPage(page) {
                     $("#img_doublepage").attr("src", img2);
                     $("#img_doublepage").attr("data-filename", img2Filename);
                 }
-                $("#display").addClass("double-mode");
+                showingSinglePage = false;
             }
         } else {
             const img = await loadImage(currentPage);
             const imgFilename = getFilename(currentPage);
             $("#img").attr("src", img);
             $("#img").attr("data-filename", imgFilename);
+            $("#display").removeClass("double-mode");
+            $("#img_doublepage").attr("src", "");
+            $("#img_doublepage").attr("data-filename", "");
             showingSinglePage = true;
         }
 
@@ -1546,22 +1617,33 @@ function startAutoNextPage() {
         if (autoNextPageCountdown <= 0) {
             clearInterval(autoNextPageCountdownTaskId);
 
-            if (mangaMode)
-                changePage(-1);
-            else
-                changePage(1);
+            const atLastPage = mangaMode ? currentPage === 0 : currentPage === maxPage;
 
-            const continueNextPage = mangaMode ? currentPage > 0 : currentPage < maxPage;
-            if (continueNextPage) {
-                startAutoNextPage();
-            } else {
+            if (atLastPage) {
+                // At archive boundary: attempt cross-archive navigation.
+                // readNextArchive/readPreviousArchive persists slideshow state
+                // to sessionStorage; loadImages on the new page resumes it.
+                if (archiveIds.length > 0) {
+                    if (mangaMode)
+                        readPreviousArchive();
+                    else
+                        readNextArchive();
+                }
                 stopAutoNextPage();
+            } else {
+                if (mangaMode)
+                    changePage(-1);
+                else
+                    changePage(1);
+                startAutoNextPage();
             }
             return;
         }
         autoNextPageCountdown -= 1;
         aEls.text(autoNextPageCountdown);
     }, 1000);
+
+    requestWakeLock();
 }
 
 function stopAutoNextPage() {
@@ -1569,6 +1651,8 @@ function stopAutoNextPage() {
     clearInterval(autoNextPageCountdownTaskId);
     $(".toggle-auto-next-page").addClass("fa-stopwatch");
     $(".toggle-auto-next-page").text("");
+
+    releaseWakeLock();
 }
 
 function toggleAutoNextPage() {
@@ -1669,7 +1753,7 @@ function updateArchiveOverlay(forceUpdate = false) {
     let firstPage = currentChapter ? currentChapter.startPage : 1;
     let lastPage = currentChapter ? currentChapter.endPage : pages.length;
 
-    $("#overlay-section").html(currentChapter ? currentChapter.name : I18N.ReaderPages);
+    $("#overlay-section").text(currentChapter ? currentChapter.name : I18N.ReaderPages);
 
     if (currentChapter !== null) {
         // Create <select> options for jumping to other chapters
@@ -1677,12 +1761,12 @@ function updateArchiveOverlay(forceUpdate = false) {
         if (content.chapters) {
             content.chapters.forEach((chapter) => {
                 const selected = (currentChapter && chapter.startPage === currentChapter.startPage) ? "selected" : "";
-                chapterOptions += `<option value="${chapter.startPage}" ${selected}>${chapter.name}</option>`;
+                chapterOptions += `<option value="${chapter.startPage}" ${selected}>${LRR.encodeHTML(chapter.name)}</option>`;
 
                 if (chapter.chapters && chapter.chapters.length > 0) {
                     chapter.chapters.forEach((subChapter) => {
                         const subSelected = (currentChapter && subChapter.startPage === currentChapter.startPage) ? "selected" : "";
-                        chapterOptions += `<option value="${subChapter.startPage}" ${subSelected}>&nbsp;&nbsp;&nbsp;${subChapter.name}</option>`;
+                        chapterOptions += `<option value="${subChapter.startPage}" ${subSelected}>&nbsp;&nbsp;&nbsp;${LRR.encodeHTML(subChapter.name)}</option>`;
                     });
                 }
             });
@@ -1818,7 +1902,9 @@ function generateThumbnails() {
     };
 
     const fetchThumbsForArc = function(arc) {
-        fetch(new LRR.ApiURL(`/api/archives/${arc.id}/files/thumbnails`), { method: "POST" })
+        fetch(new LRR.ApiURL(`/api/archives/${arc.id}/files/thumbnails`), {
+            method: "POST",
+        })
             .then(response => {
                 if (response.status === 200) {
                     // Thumbnails are already generated, there's nothing to do. Very nice!
@@ -1884,16 +1970,35 @@ function changePage(targetPage, resetAuto = false) {
         destination = mangaMode ? 0 : maxPage;
     } else {
         let offset = targetPage;
+        // Double the offset to move by 2 pages at once, unless we're currently showing a widespread
         if (doublePageMode && !showingSinglePage && currentPage > 0) {
             offset *= 2;
         }
         destination = currentPage + (mangaMode ? -offset : offset);
     }
-    goToPage(destination);
+    if (destination < 0) {
+        // Clamp if we're not at the first page, to avoid doublepage mode accidentally yeeting us to previous archive
+        if (currentPage > 0) {
+            destination = 0;
+        } else {
+            return readPreviousArchive();
+        }
+    } else if (destination > maxPage) {
+        // Ditto for last page
+        if (currentPage < maxPage) {
+            destination = maxPage;
+        } else {
+            return readNextArchive();
+        }
+    }
+    return goToPage(destination);
 }
 
 function handlePaginator() {
     switch (this.getAttribute("value")) {
+        case "outermost-left":
+            readPreviousArchive();
+            break;
         case "outer-left":
             changePage("first", true);
             break;
@@ -1906,6 +2011,9 @@ function handlePaginator() {
         case "outer-right":
             changePage("last", true);
             break;
+        case "outermost-right":
+            readNextArchive();
+            break;
         default:
             break;
     }
@@ -1913,6 +2021,243 @@ function handlePaginator() {
 
 function getFilename(index) {
     return new URLSearchParams(pages[index].split("?")[1]).get("path");
+}
+
+function getImageSize(url) {
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => {
+            resolve({
+                width: img.naturalWidth,
+                height: img.naturalHeight,
+            });
+        };
+        img.onerror = (err) => {
+            reject(err);
+        };
+        img.src = url;
+    });
+}
+
+/**
+ * Determine if current page qualifies for, and sets up, archive navigation state.
+ * While in reader mode, navigation state is only supported if user enters reader from index datatables,
+ * or if user is already in reader mode with navigation support and switches to a different archive via
+ * readNextArchive() or readPreviousArchive().
+ *
+ * If users enters from carousel or by pasting URL, navigation is not supported.
+ *
+ * @returns {Promise<boolean>} - whether archive navigation state was set up
+ */
+async function setupArchiveNavigation() {
+    const navigationState = sessionStorage.getItem("navigationState");
+    const currArchiveIdsJson = localStorage.getItem("currArchiveIds");
+    const {referrer} = document;
+    const isDirectNavigation = !referrer || !referrer.includes(window.location.host);
+    if (isDirectNavigation) {
+        archiveIds = [];
+        sessionStorage.removeItem("navigationState");
+        return false;
+    } else if (navigationState === "datatables" && currArchiveIdsJson) {
+        try {
+            const ids = JSON.parse(currArchiveIdsJson);
+            archiveIds = ids;
+            archiveIndex = ids.indexOf(id);
+            if (archiveIndex !== -1) {
+                $(".archive-nav-link").show();
+                if (archiveIndex === 0) {
+                    const previousArchives = await loadPreviousDatatablesArchives();
+                    if (previousArchives) {
+                        localStorage.setItem("previousArchiveIds", JSON.stringify(previousArchives));
+                    }
+                }
+                if (archiveIndex === ids.length - 1) {
+                    const nextArchives = await loadNextDatatablesArchives();
+                    if (nextArchives) {
+                        localStorage.setItem("nextArchiveIds", JSON.stringify(nextArchives));
+                    }
+                }
+            }
+        } catch (error) {
+            console.error("Error setting up archive navigation state:", error);
+            return false;
+        }
+    }
+    return true;
+}
+
+async function loadPreviousDatatablesArchives() {
+    if (localStorage.getItem("previousArchiveIds")) {
+        return JSON.parse(localStorage.getItem("previousArchiveIds"));
+    }
+    const currentDTPage = parseInt(localStorage.getItem("currDatatablesPage") || "1", 10);
+    if (currentDTPage <= 1) return null;
+    return loadDatatablesArchives(currentDTPage - 1);
+}
+
+async function loadNextDatatablesArchives() {
+    if (localStorage.getItem("nextArchiveIds")) {
+        return JSON.parse(localStorage.getItem("nextArchiveIds"));
+    }
+    const currentDTPage = parseInt(localStorage.getItem("currDatatablesPage") || "1", 10);
+    return loadDatatablesArchives(currentDTPage + 1);
+}
+
+function readPreviousArchive() {
+    if (fscreen.inFullscreen()) {
+        console.warn("[previous] Archive navigation not supported in fullscreen mode.");
+        return;
+    }
+    if (archiveIds.length > 0) {
+        let previousArchiveId;
+        if (archiveIndex === 0) {
+            const previousArchiveIdsJson = localStorage.getItem("previousArchiveIds");
+            const currArchiveIdsJson = localStorage.getItem("currArchiveIds");
+            if (previousArchiveIdsJson && currArchiveIdsJson) {
+                const previousArchiveIds = JSON.parse(previousArchiveIdsJson);
+                localStorage.removeItem("previousArchiveIds");
+                localStorage.setItem("currArchiveIds", previousArchiveIdsJson);
+                localStorage.setItem("nextArchiveIds", currArchiveIdsJson);
+                previousArchiveId = previousArchiveIds[previousArchiveIds.length - 1];
+                const currentDTPage = parseInt(localStorage.getItem("currDatatablesPage") || "1", 10);
+                localStorage.setItem("currDatatablesPage", currentDTPage - 1);
+            } else {
+                LRR.toast({ text: I18N.ReaderFirstArchive });
+                return;
+            }
+        } else {
+            previousArchiveId = archiveIds[archiveIndex - 1];
+        }
+        if (autoNextPage) {
+            sessionStorage.setItem("autoNextPage", "true");
+        }
+        const newUrl = new LRR.ApiURL(`/reader?id=${previousArchiveId}`).toString();
+        window.location.replace(newUrl);
+    } else {
+        LRR.toast({ text: I18N.ReaderFirstArchive });
+    }
+}
+
+function readNextArchive() {
+    if (fscreen.inFullscreen()) {
+        console.warn("[next] Archive navigation not supported in fullscreen mode.");
+        return;
+    }
+    if (archiveIds.length > 0) {
+        let nextArchiveId;
+        if (archiveIndex === archiveIds.length - 1) {
+            const nextArchiveIdsJson = localStorage.getItem("nextArchiveIds");
+            const currArchiveIdsJson = localStorage.getItem("currArchiveIds");
+            if (nextArchiveIdsJson && currArchiveIdsJson) {
+                const nextArchiveIds = JSON.parse(nextArchiveIdsJson);
+                localStorage.removeItem("nextArchiveIds");
+                localStorage.setItem("currArchiveIds", nextArchiveIdsJson);
+                localStorage.setItem("previousArchiveIds", currArchiveIdsJson);
+                nextArchiveId = nextArchiveIds[0];
+                const currentDTPage = parseInt(localStorage.getItem("currDatatablesPage") || "1", 10);
+                localStorage.setItem("currDatatablesPage", currentDTPage + 1);
+            } else {
+                LRR.toast({ text: I18N.ReaderLastArchive });
+                return;
+            }
+        } else {
+            nextArchiveId = archiveIds[archiveIndex + 1];
+        }
+        if (autoNextPage) {
+            sessionStorage.setItem("autoNextPage", "true");
+        }
+        const newUrl = new LRR.ApiURL(`/reader?id=${nextArchiveId}`).toString();
+        window.location.replace(newUrl);
+    } else {
+        LRR.toast({ text: I18N.ReaderLastArchive });
+    }
+}
+
+/**
+ * Loads the archives for the given datatables page so the Reader can navigate
+ * between archives across DT page boundaries without re-rendering the index.
+ * TODO: given this can drift from how index builds DT search requests we might
+ * want to consolidate.
+ *
+ * @param {number} datatablesPage - The page number to load.
+ * @returns {Promise<Array<string>|null>} - The list of archive IDs, or null on error
+ */
+async function loadDatatablesArchives(datatablesPage) {
+    const indexSearchQuery = localStorage.getItem("currentSearch") || "";
+    const indexSelectedCategory = localStorage.getItem("selectedCategory") || "";
+    const datatablesPageSize = parseInt(localStorage.getItem("datatablesPageSize") || "100", 10);
+    const indexSort = localStorage.getItem("indexSort") || "title";
+    const indexOrder = localStorage.getItem("indexOrder") || "asc";
+    let searchUrlStr = `/api/search/ids?start=${(datatablesPage - 1) * datatablesPageSize}`;
+    if (indexSearchQuery) searchUrlStr += `&filter=${encodeURIComponent(indexSearchQuery)}`;
+    
+    // See Index.updateCarousel
+    if (indexSelectedCategory === "NEW_ONLY") {
+        searchUrlStr += `&newonly=true`;
+    } else if (indexSelectedCategory === "UNTAGGED_ONLY") {
+        searchUrlStr += `&untaggedonly=true`;
+    } else if (indexSelectedCategory) {
+        searchUrlStr += `&category=${encodeURIComponent(indexSelectedCategory)}`;
+    }
+    if (indexSort && indexSort !== "title") {
+        searchUrlStr += `&sortby=${encodeURIComponent(indexSort)}`;
+        searchUrlStr += `&order=${indexOrder}`;
+    }
+
+    // Carry over the index tank-grouping and hide-completed settings so the prefetched
+    // neighbor page matches the lineup the user is viewing.
+    if (localStorage.getItem("grouptanks") === "false") searchUrlStr += `&groupby_tanks=false`;
+    if (localStorage.getItem("hidecompleted") === "true") searchUrlStr += `&hidecompleted=true`;
+
+    const searchUrl = new LRR.ApiURL(searchUrlStr);
+
+    try {
+        const response = await fetch(searchUrl.toString(), {
+            method: "GET",
+            headers: { Accept: "application/json" },
+        });
+        if (!response.ok) {
+            console.error("Failed to fetch archive list:", response.status, response.statusText);
+            return null;
+        }
+        const data = await response.json();
+        if (data && data.data && data.data.length > 0) {
+            return data.data;
+        }
+        return null;
+    } catch (error) {
+        console.error("Failed to fetch archive list:", error);
+        return null;
+    }
+}
+
+/**
+ * Return to the index page with state preservation. Navigates to the DT page,
+ * search filter, category, and sort order that were active when the user
+ * entered reader mode, updated by any cross-DT archive navigation.
+ */
+function returnToIndex() {
+    const indexSearchQuery = localStorage.getItem("currentSearch") || "";
+    const indexSelectedCategory = localStorage.getItem("selectedCategory") || "";
+    const indexSort = localStorage.getItem("indexSort") || "title";
+    const indexOrder = localStorage.getItem("indexOrder") || "asc";
+    const currentDTPage = localStorage.getItem("currDatatablesPage") || "1";
+    let returnUrl = "/";
+    const params = new URLSearchParams();
+    if (indexSearchQuery) params.append("q", indexSearchQuery);
+    if (indexSelectedCategory) params.append("c", indexSelectedCategory);
+    // indexSort is the column's tag-namespace name (sName); the index reads ?sort= by name,
+    // so pass it straight through. Title is the default and is omitted, matching buildURLParameters.
+    if (indexSort && indexSort !== "title") {
+        params.append("sort", indexSort);
+    }
+    if (indexOrder !== "asc") params.append("sortdir", indexOrder);
+    if (currentDTPage !== "1") params.append("p", currentDTPage);
+    const queryString = params.toString();
+    if (queryString) {
+        returnUrl += "?" + queryString;
+    }
+    window.location.href = new LRR.ApiURL(returnUrl).toString();
 }
 
 /**
@@ -1948,7 +2293,34 @@ jQuery(() => {
                     "editmarker": {"name": "Edit Marker", "icon":"fas fa-pen-to-square"},
                     "deletemarker": {"name": "Delete Marker", "icon":"fas fa-minus"},
                 }
-            }
+            };
         }
     });
 });
+
+async function requestWakeLock() {
+    if (wakeLock !== null) {
+        return;
+    }
+    if (!("wakeLock" in navigator)) {
+        console.warn("Wake Lock API is not available. You're likely running in an outdated browser or without HTTPS.");
+        return;
+    }
+
+    try {
+        wakeLock = await navigator.wakeLock.request();
+
+        wakeLock.addEventListener("release", () => {
+            wakeLock = null;
+        });
+    } catch (err) {
+        console.warn("Error acquiring wake lock:", err);
+    }
+}
+
+function releaseWakeLock() {
+    if (wakeLock !== null) {
+        wakeLock.release();
+    }
+}
+
