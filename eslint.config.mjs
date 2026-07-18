@@ -27,7 +27,6 @@ const config = {
             Awesomplete: "readonly",
             Raty: "readonly",
             Sortable: "readonly",
-            Swiper: "readonly",
             tagger: "readonly",
             tippy: "readonly",
         },
@@ -80,6 +79,6 @@ const config = {
 
 export default defineConfig([
     importX.flatConfigs.recommended,
-    globalIgnores(["public/js/vendor/*.js", "tests/samples/*"]),
+    globalIgnores(["public/js/vendor/**", "tests/samples/*"]),
     config,
 ]);
