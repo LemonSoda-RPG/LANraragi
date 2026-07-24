@@ -79,7 +79,7 @@ After editing local source code, rebuild and restart LANraragi with:
 The script will:
 
 * sync `tools/build/homebrew/Lanraragi.rb` into the local tap at
-  `/opt/homebrew/Library/Taps/jiacheng/homebrew-lanraragi-local/Formula/lanraragi.rb`;
+  `/opt/homebrew/Library/Taps/user/homebrew-lanraragi-local/Formula/lanraragi.rb`;
 * point the tap formula's `head` to this checkout through `file://.../.git`;
 * install with `--HEAD` when LANraragi is not installed yet;
 * reinstall without `--HEAD` when the installed package is already a HEAD build;
@@ -89,10 +89,10 @@ The script will:
 Useful service commands:
 
 ```bash
-brew services info jiacheng/lanraragi-local/lanraragi
-brew services restart jiacheng/lanraragi-local/lanraragi
-brew services stop jiacheng/lanraragi-local/lanraragi
-brew services start jiacheng/lanraragi-local/lanraragi
+brew services info user/lanraragi-local/lanraragi
+brew services restart user/lanraragi-local/lanraragi
+brew services stop user/lanraragi-local/lanraragi
+brew services start user/lanraragi-local/lanraragi
 ```
 
 Runtime paths can be changed without rebuilding. The Homebrew launcher reads:
@@ -116,7 +116,7 @@ export LRR_TEMP_DIRECTORY="/path/to/temp"
 Apply path changes with:
 
 ```bash
-brew services restart jiacheng/lanraragi-local/lanraragi
+brew services restart user/lanraragi-local/lanraragi
 ```
 
 Useful paths:
