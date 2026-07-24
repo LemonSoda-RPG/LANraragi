@@ -750,6 +750,30 @@ body.swal2-shown>[aria-hidden="true"] {
   text-decoration: none;
 }
 
+.absolute-options a.reader-delete-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-right: 10px;
+  padding: 8px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 999px;
+  background: #b42318;
+  color: #fff;
+  box-shadow: 0 3px 12px rgba(99, 12, 8, 0.35);
+  font-size: 0.9rem;
+  font-weight: 700;
+  line-height: 1;
+  vertical-align: middle;
+}
+
+.absolute-options a.reader-delete-action:hover,
+.absolute-options a.reader-delete-action:focus {
+  background: #d92d20;
+  color: #fff;
+  box-shadow: 0 4px 16px rgba(99, 12, 8, 0.5);
+}
+
 .pagecount {
   vertical-align: unset !important;
 }
@@ -1032,6 +1056,18 @@ body.infinite-scroll .fullscreen-infinite img {
     top: auto !important;
   }
 
+  .absolute-options a.reader-delete-action {
+    justify-content: center;
+    width: 38px;
+    height: 38px;
+    margin-right: 8px;
+    padding: 0;
+  }
+
+  .reader-delete-action span {
+    display: none;
+  }
+
   .absolute-right {
     bottom: 15px !important;
     right: 10px !important;
@@ -1040,6 +1076,6 @@ body.infinite-scroll .fullscreen-infinite img {
 
   /* Ensure the paginator isn't blocked */
   .sn {
-    margin-bottom: 60px !important;
+    margin-bottom: 16px !important;
   }
 }

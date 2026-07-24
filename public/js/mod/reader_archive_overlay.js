@@ -9,24 +9,7 @@ import { state, goToPage, loadContentData, stopAutoNextPage, toggleOverlay, getC
 export function initializeArchiveOverlay() {
     $(document).on("click.toggle-archive-overlay", "#toggle-archive-overlay", toggleArchiveOverlay);
     $(document).on("click.edit-metadata", "#edit-archive", () => LRR.openInNewTab(new LRR.ApiURL(`/edit?id=${state.id}`)));
-    $(document).on("click.delete-archive", "#delete-archive", () => {
-        const isTank = state.id.startsWith("TANK_");
-        LRR.closeOverlay();
-        LRR.showPopUp({
-            text: isTank ? I18N.ConfirmTankoubonDeletion : I18N.ConfirmArchiveDeletion,
-            icon: "warning",
-            showCancelButton: true,
-            focusConfirm: false,
-            confirmButtonText: I18N.ConfirmYes,
-            reverseButtons: true,
-            confirmButtonColor: "#d33",
-        }).then((result) => {
-            if (result.isConfirmed) {
-                if (isTank) Server.deleteTankoubon(state.id, () => { document.location.href = "./"; });
-                else Server.deleteArchive(state.id, () => { document.location.href = "./"; });
-            }
-        });
-    });
+    $(document).on("click.delete-archive", "#delete-archive, .reader-delete-action", confirmArchiveDeletion);
     $(document).on("click.add-category", "#add-category", () => {
         if ($("#category").val() === "" || $(`#archive-categories a[data-id="${$("#category").val()}"]`).length !== 0) { return; }
         Server.addArchiveToCategory(state.id, $("#category").val());
@@ -86,6 +69,28 @@ export function initializeArchiveOverlay() {
     });
 
     $(document).on("click.filter-stamped", "#filter-stamped", filterStampedOverlay);
+}
+
+function confirmArchiveDeletion(event) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    const isTank = state.id.startsWith("TANK_");
+    LRR.closeOverlay();
+    LRR.showPopUp({
+        text: isTank ? I18N.ConfirmTankoubonDeletion : I18N.ConfirmArchiveDeletion,
+        icon: "warning",
+        showCancelButton: true,
+        focusConfirm: false,
+        confirmButtonText: I18N.ConfirmYes,
+        reverseButtons: true,
+        confirmButtonColor: "#d33",
+    }).then((result) => {
+        if (result.isConfirmed) {
+            if (isTank) Server.deleteTankoubon(state.id, () => { document.location.href = "./"; });
+            else Server.deleteArchive(state.id, () => { document.location.href = "./"; });
+        }
+    });
 }
 
 /**

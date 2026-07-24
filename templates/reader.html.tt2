@@ -223,6 +223,14 @@
 <div class="absolute-options absolute-left">
     <a class="fa fa-cog fa-2x" id="toggle-settings-overlay" href="#" title="[% c.lh('Reader Options') %]"></a>
     <a class="fa fa-question-circle fa-2x" id="toggle-help" href="#" title="[% c.lh('Help') %]"></a>
+    [% IF userlogged %]
+    <a class="reader-delete-action" href="#"
+        title="[% IF is_tank %][% c.lh('Delete Tankoubon') %][% ELSE %][% c.lh('Delete Archive') %][% END %]"
+        aria-label="[% IF is_tank %][% c.lh('Delete Tankoubon') %][% ELSE %][% c.lh('Delete Archive') %][% END %]">
+        <i class="fa fa-trash-alt" aria-hidden="true"></i>
+        <span>[% IF is_tank %][% c.lh("Delete Tankoubon") %][% ELSE %][% c.lh("Delete Archive") %][% END %]</span>
+    </a>
+    [% END %]
 </div>
 
 <div class="absolute-options absolute-right">
