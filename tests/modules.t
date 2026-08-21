@@ -43,6 +43,7 @@ my @modules = (
     "LANraragi::Plugin::Metadata::Fakku",        "LANraragi::Plugin::Login::EHentai",
     "LANraragi::Plugin::Login::Fakku",           "LANraragi::Plugin::Scripts::SourceFinder",
     "LANraragi::Plugin::Scripts::FolderToCat",   "LANraragi::Plugin::Scripts::DuplicateArchives",
+    "LANraragi::Plugin::Scripts::AddEhentaiMetadata",
     "LANraragi::Plugin::Download::EHentai",      "LANraragi::Plugin::Download::Chaika",
     "LANraragi::Plugin::Scripts::nHentaiSourceConverter",
     "LANraragi::Plugin::Metadata::Hitomi",       "LANraragi::Plugin::Metadata::Hentag",
