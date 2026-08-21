@@ -103,6 +103,29 @@ After editing local source code, rebuild and restart LANraragi with:
 ./tools/build/homebrew/rebuild-local.sh
 ```
 
+To create a tested, distributable Homebrew bottle without stopping the
+currently running service, run:
+
+```bash
+chmod +x tools/build/homebrew/build-bottle.sh
+./tools/build/homebrew/build-bottle.sh
+```
+
+Bottle creation rebuilds the package with Homebrew's `--build-bottle` mode,
+runs the full package test suite on an isolated port, and writes the
+`.bottle.tar.gz` and `.json` files to the repository root. The script does not
+call `brew services stop`, `brew services start`, or `brew services restart`.
+To use another output directory:
+
+```bash
+LANRARAGI_BOTTLE_DIR="$HOME/Desktop/lanraragi-bottle" \
+  ./tools/build/homebrew/build-bottle.sh
+```
+
+The resulting bottle is specific to the Mac architecture and macOS version it
+was built on. It contains LANraragi, while its Homebrew dependencies remain
+separate packages.
+
 The script will:
 
 * use the Homebrew prefix returned by `brew --prefix`, so Apple Silicon and
@@ -115,6 +138,10 @@ The script will:
 * switch a stable install to a local HEAD build when needed;
 * run the installed package test suite before starting the service;
 * restart the Homebrew service after a successful build.
+
+The separate `tools/build/homebrew/build-bottle.sh` script builds a bottle
+without managing the service. Its smoke test uses port `3301` by default; set
+`LRR_BOTTLE_TEST_PORT` if that port is already in use.
 
 Useful service commands:
 
