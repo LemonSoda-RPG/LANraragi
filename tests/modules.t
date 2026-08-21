@@ -36,6 +36,7 @@ my @modules = (
     "LANraragi::Model::Registry",                "LANraragi::Model::Server",
     "LANraragi::Plugin::Metadata::Chaika",       "LANraragi::Plugin::Metadata::CopyTags",
     "LANraragi::Plugin::Metadata::DateAdded",    "LANraragi::Plugin::Metadata::EHentai",
+    "LANraragi::Plugin::Metadata::ETagCN",
     "LANraragi::Plugin::Metadata::Eze",          "LANraragi::Plugin::Metadata::HDoujin",
     "LANraragi::Plugin::Metadata::Koromo",       "LANraragi::Plugin::Metadata::MEMS",
     "LANraragi::Plugin::Metadata::nHentai",      "LANraragi::Plugin::Metadata::RegexParse",
