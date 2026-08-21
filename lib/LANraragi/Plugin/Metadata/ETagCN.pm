@@ -18,6 +18,7 @@ use Mojo::UserAgent;
 #You can also use the LRR Internal API when fitting.
 use LANraragi::Model::Plugins;
 use LANraragi::Utils::Logging qw(get_plugin_logger);
+use LANraragi::Utils::Redis qw(redis_decode);
 
 #Meta-information about your plugin.
 sub plugin_info {
@@ -279,7 +280,7 @@ sub get_tags_from_EH ( $ua, $gID, $gToken, $jpntitle, $additionaltags, $db_path 
     my $cntags = translate_tag_to_cn( \@tags, $db_path );
 
     my $ehtags = join( ', ', @$cntags );
-    $logger->info("Sending the following tags to LRR: $ehtags");
+    $logger->info("Sending the following tags to LRR: " . redis_decode($ehtags));
 
     return ( $ehtags, $ehtitle );
 }

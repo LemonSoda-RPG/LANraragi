@@ -17,6 +17,10 @@ my @plugin_calls;
 my @tag_updates;
 my $logger = bless {}, "LANraragi::Plugin::Scripts::AddEhentaiMetadata::TestLogger";
 
+my %plugin_info = LANraragi::Plugin::Scripts::AddEhentaiMetadata::plugin_info();
+is( $plugin_info{name},      "Add ETagCN Metatdata", "keeps the original plugin name" );
+is( $plugin_info{namespace}, "addehentaimetatdata", "keeps the original plugin namespace" );
+
 {
     no warnings qw(once redefine);
 
