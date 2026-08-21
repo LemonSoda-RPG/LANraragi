@@ -17,7 +17,6 @@ use local::lib;
 
 use FindBin;
 use MCE::Loop;
-use Sys::CpuAffinity;
 use Storable   qw(lock_store);
 use Mojo::JSON qw(to_json);
 use Config;
@@ -75,6 +74,10 @@ sub initialize_from_new_process {
 
     my $userdir = LANraragi::Model::Config->get_userdir;
     my $metrics_enabled = LANraragi::Model::Config->enable_metrics;
+
+    if ($metrics_enabled) {
+        LANraragi::Model::Metrics::unregister_shinobu();
+    }
 
     $logger->info("Shinobu File Watcher started.");
     $logger->info("Content folder is $userdir.");

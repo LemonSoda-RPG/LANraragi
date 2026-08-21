@@ -54,11 +54,11 @@ requires 'Proc::Simple',       1.32;
 requires 'Parallel::Loops',    0.10;
 requires 'MCE::Loop',          1.901;
 requires 'MCE::Shared',        1.893;
-requires 'Sys::CpuAffinity',   1.12;
 requires 'File::ChangeNotify', 0.31;
 
 # Plugin system
 requires 'Module::Pluggable', 5.2;
+requires 'SemVer',            0.10.0;
 
 # Eze plugin/Timestamp calculation
 requires 'Time::Local', 1.30;
