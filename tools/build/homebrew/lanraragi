@@ -3,12 +3,17 @@
 # prefix/place where lrr is installed
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 workdir="$(cd "${script_dir}/.." && pwd)/libexec"
+_HOMEBREW_PREFIX="${HOMEBREW_PREFIX:-}"
+if [[ -z "${_HOMEBREW_PREFIX}" ]] && command -v brew >/dev/null 2>&1; then
+  _HOMEBREW_PREFIX="$(brew --prefix)"
+fi
+_HOMEBREW_PREFIX="${_HOMEBREW_PREFIX:-/opt/homebrew}"
 
 # Optional runtime configuration.
 # Use this file to override LRR_* paths without rebuilding the formula.
 _LRR_CONFIG_DIR="${XDG_CONFIG_HOME:-${HOME}/.config}/lanraragi"
 _LRR_ENV_FILE="${LRR_ENV_FILE:-${_LRR_CONFIG_DIR}/lanraragi.env}"
-_LRR_ENV_TEMPLATE="${LRR_ENV_TEMPLATE:-/opt/homebrew/etc/lanraragi.env.example}"
+_LRR_ENV_TEMPLATE="${LRR_ENV_TEMPLATE:-${_HOMEBREW_PREFIX}/etc/lanraragi.env.example}"
 if [[ ! -f "${_LRR_ENV_FILE}" && -f "${_LRR_ENV_TEMPLATE}" ]]; then
   mkdir -p "$(dirname "${_LRR_ENV_FILE}")"
   cp "${_LRR_ENV_TEMPLATE}" "${_LRR_ENV_FILE}"
@@ -76,7 +81,7 @@ fi
 
 # @INC export
 export PERL5LIB="${workdir}/lib/perl5"
-export PATH="/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:/usr/bin:/bin:/usr/sbin:/sbin:${PATH}"
+export PATH="${_HOMEBREW_PREFIX}/bin:${_HOMEBREW_PREFIX}/sbin:/usr/local/bin:/usr/local/sbin:/usr/bin:/bin:/usr/sbin:/sbin:${PATH}"
 
 # launch command
 redis-server "${workdir}/redis.conf" --logfile "${LRR_LOG_DIRECTORY}/redis.log" --dir "${LRR_DATABASE_DIRECTORY}"

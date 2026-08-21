@@ -81,7 +81,8 @@ class Lanraragi < Formula
   service do
     run [opt_bin/"lanraragi"]
     keep_alive true
-    environment_variables PATH: "#{HOMEBREW_PREFIX}/bin:#{HOMEBREW_PREFIX}/sbin:/usr/local/bin:/usr/local/sbin:/usr/bin:/bin:/usr/sbin:/sbin"
+    environment_variables HOMEBREW_PREFIX: HOMEBREW_PREFIX.to_s,
+                          PATH: "#{HOMEBREW_PREFIX}/bin:#{HOMEBREW_PREFIX}/sbin:/usr/local/bin:/usr/local/sbin:/usr/bin:/bin:/usr/sbin:/sbin"
     log_path var/"log/lanraragi.log"
     error_log_path var/"log/lanraragi.err.log"
   end
@@ -92,14 +93,22 @@ class Lanraragi < Formula
 
     # Make sure lanraragi writes files to a path allowed by the sandbox
     ENV["LRR_LOG_DIRECTORY"] = ENV["LRR_TEMP_DIRECTORY"] = testpath
+    mkdir_p testpath
     %w[server.pid shinobu.pid minion.pid].each { |file| touch file }
 
     # On top of the brew-core testing, we can and do want to run the test suite for CI.  
     system "npm", "--prefix", libexec, "test"
 
+    # Some tests clean up their log directory. Use the system temp directory
+    # for the startup smoke test so it is outside Homebrew's test sandbox.
+    runtime_testpath = Pathname.new(OS.mac? ? "/private/tmp" : "/tmp")
+    ENV["LRR_LOG_DIRECTORY"] = ENV["LRR_TEMP_DIRECTORY"] = runtime_testpath
+    mkdir_p runtime_testpath
+
     # This can't have its _user-facing_ functionality tested in the `brew test`
     # environment because it needs Redis. It fails spectacularly tho with some
     # table flip emoji. So let's use those to confirm _some_ functionality.
+    ENV["LRR_REDIS_ADDRESS"] = "127.0.0.1:6399"
     output = <<~EOS
       ｷﾀ━━━━━━(ﾟ∀ﾟ)━━━━━━!!!!!
       (╯・_>・）╯︵ ┻━┻

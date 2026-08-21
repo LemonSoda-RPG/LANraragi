@@ -68,7 +68,34 @@ Open source server for archival of comics/manga, running on Mojolicious + Redis.
 ## Local Homebrew Workflow
 
 This fork includes a local Homebrew workflow for building LANraragi from the
-current checkout and managing it as a macOS user service.
+current checkout and managing it as a macOS user service. The workflow builds
+the Homebrew package from source, installs all Perl and JavaScript dependencies,
+runs the package test suite, and only then restarts the service.
+
+### First-time setup
+
+Install [Homebrew](https://brew.sh/) first, then run these commands from a
+fresh checkout:
+
+```bash
+git clone https://github.com/LemonSoda-RPG/LANraragi.git
+cd LANraragi
+chmod +x tools/build/homebrew/rebuild-local.sh
+./tools/build/homebrew/rebuild-local.sh
+```
+
+The first run may take a while because Homebrew downloads build dependencies
+and compiles the Perl modules. The script creates a local tap automatically;
+no separate formula repository is required. If you already have a tap named
+`*/lanraragi-local`, it reuses that tap. To select a specific tap explicitly:
+
+```bash
+export LANRARAGI_BREW_TAP="your-user/lanraragi-local"
+./tools/build/homebrew/rebuild-local.sh
+```
+
+The build is considered successful only when `brew test --verbose lanraragi`
+passes. The service is then restarted automatically.
 
 After editing local source code, rebuild and restart LANraragi with:
 
@@ -78,21 +105,24 @@ After editing local source code, rebuild and restart LANraragi with:
 
 The script will:
 
-* sync `tools/build/homebrew/Lanraragi.rb` into the local tap at
-  `/opt/homebrew/Library/Taps/user/homebrew-lanraragi-local/Formula/lanraragi.rb`;
+* use the Homebrew prefix returned by `brew --prefix`, so Apple Silicon and
+  Intel Macs use the correct paths;
+* sync `tools/build/homebrew/Lanraragi.rb` into the local tap;
 * point the tap formula's `head` to this checkout through `file://.../.git`;
+* install all formula dependencies and the Perl/JavaScript dependencies;
 * install with `--HEAD` when LANraragi is not installed yet;
 * reinstall without `--HEAD` when the installed package is already a HEAD build;
 * switch a stable install to a local HEAD build when needed;
+* run the installed package test suite before starting the service;
 * restart the Homebrew service after a successful build.
 
 Useful service commands:
 
 ```bash
-brew services info user/lanraragi-local/lanraragi
-brew services restart user/lanraragi-local/lanraragi
-brew services stop user/lanraragi-local/lanraragi
-brew services start user/lanraragi-local/lanraragi
+brew services info lanraragi
+brew services restart lanraragi
+brew services stop lanraragi
+brew services start lanraragi
 ```
 
 Runtime paths can be changed without rebuilding. The Homebrew launcher reads:
@@ -102,7 +132,7 @@ Runtime paths can be changed without rebuilding. The Homebrew launcher reads:
 ```
 
 If the file does not exist, the launcher creates it from the packaged template at
-`/opt/homebrew/etc/lanraragi.env.example`. Edit `~/.config/lanraragi/lanraragi.env`
+`$(brew --prefix)/etc/lanraragi.env.example`. Edit `~/.config/lanraragi/lanraragi.env`
 and uncomment the paths you want to override:
 
 ```bash
@@ -116,7 +146,7 @@ export LRR_TEMP_DIRECTORY="/path/to/temp"
 Apply path changes with:
 
 ```bash
-brew services restart user/lanraragi-local/lanraragi
+brew services restart lanraragi
 ```
 
 Useful paths:
@@ -125,6 +155,6 @@ Useful paths:
 Web UI:      http://127.0.0.1:3000
 Data:        ~/Library/Application Support/LANraragi
 App log:     ~/Library/Logs/LANraragi/lanraragi.log
-Service log: /opt/homebrew/var/log/lanraragi.log
-Error log:   /opt/homebrew/var/log/lanraragi.err.log
+Service log: $(brew --prefix)/var/log/lanraragi.log
+Error log:   $(brew --prefix)/var/log/lanraragi.err.log
 ```
