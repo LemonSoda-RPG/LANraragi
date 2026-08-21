@@ -19,7 +19,7 @@ is( $plugin_info{type},      'metadata', 'plugin type' );
 is( scalar @{ $plugin_info{parameters} }, 9, 'plugin parameter count' );
 
 my ( $fh, $db_path ) = tempfile();
-binmode $fh, ':encoding(UTF-8)';
+binmode $fh, ':raw';
 print {$fh} encode_json(
     {
         data => [

@@ -322,7 +322,8 @@ sub translate_tag_to_cn ( $list, $db_path ) {
         return $list;
     }
 
-    open( my $json_fh, "<:encoding(UTF-8)", $db_path )
+    # Mojo::JSON expects UTF-8 bytes and performs the JSON decoding itself.
+    open( my $json_fh, "<:raw", $db_path )
       or do {
         $logger->warn("Cannot open ETagCN translation database '$db_path': $!");
         return $list;
