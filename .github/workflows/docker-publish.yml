@@ -1,10 +1,10 @@
 # 构建本 fork 的生产镜像并推送。
 #
 # 推送目标有两个，都是"配了就推、没配就不推"，不会因为缺凭据而失败：
-#   1. GHCR（GitHub 自带容器仓库）ghcr.io/<owner>/lanraragi
+#   1. GHCR（GitHub 自带容器仓库）ghcr.io/<owner>/<IMAGE_NAME>
 #      —— 用 Actions 内置的 GITHUB_TOKEN，**不需要任何额外配置**，push 即可用。
 #      首次推送后包默认是 private，要给外部匿名拉取需在仓库 Packages 里改为 public。
-#   2. Docker Hub <DOCKERHUB_USERNAME>/lanraragi
+#   2. Docker Hub <DOCKERHUB_USERNAME>/<IMAGE_NAME>
 #      —— 需要仓库密钥（Settings → Secrets and variables → Actions）:
 #           DOCKERHUB_USERNAME  Docker Hub 用户名
 #           DOCKERHUB_TOKEN     Docker Hub 访问令牌（不是登录密码）
@@ -28,6 +28,11 @@ on:
 permissions:
   contents: read
   packages: write      # 推 GHCR 需要
+
+env:
+  # 镜像名。要改成别的（例如 lanraragi-fork）只改这一行，
+  # 推送目标会自动变成 <DOCKERHUB_USERNAME>/<IMAGE_NAME> 和 ghcr.io/<owner>/<IMAGE_NAME>。
+  IMAGE_NAME: lanraragi
 
 jobs:
   # 判断有没有配置 Docker Hub 凭据，供 build job 决定要不要一并推过去
@@ -89,7 +94,10 @@ jobs:
         id: meta
         uses: docker/metadata-action@v6
         with:
-          images: ${{ env.DOCKERHUB_CONFIGURED == 'true' && format('{0}/lanraragi,ghcr.io/{1}/lanraragi', env.DOCKERHUB_USERNAME, steps.owner.outputs.name) || format('ghcr.io/{0}/lanraragi', steps.owner.outputs.name) }}
+          images: >-
+            ${{ env.DOCKERHUB_CONFIGURED == 'true'
+                && format('{0}/{2},ghcr.io/{1}/{2}', env.DOCKERHUB_USERNAME, steps.owner.outputs.name, env.IMAGE_NAME)
+                || format('ghcr.io/{0}/{1}', steps.owner.outputs.name, env.IMAGE_NAME) }}
           tags: |
             type=raw,value=dev,enable=${{ github.ref == 'refs/heads/dev' }}
             type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
