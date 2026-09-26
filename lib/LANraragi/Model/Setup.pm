@@ -12,8 +12,11 @@ use Exporter 'import';
 our @EXPORT_OK = qw(first_install_actions);
 
 # Default plugin registry seeded on first install.
+# Points at this fork's own registry, which is validated and installable
+# (upstream's Difegue/Ougi currently fails validation, so seeding it would
+# only produce a broken registry plus warnings).
 use constant DEFAULT_REGISTRY_NAME     => "Ougi";
-use constant DEFAULT_REGISTRY_URL      => "https://github.com/Difegue/Ougi.git";
+use constant DEFAULT_REGISTRY_URL      => "https://github.com/LemonSoda-RPG/Ougi.git";
 use constant DEFAULT_REGISTRY_REF      => "main";
 
 # first_install_actions()

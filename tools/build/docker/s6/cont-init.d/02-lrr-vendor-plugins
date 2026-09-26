@@ -1,0 +1,29 @@
+#!/bin/sh
+# 把镜像里内置的 managed 插件播种到 Plugin/Managed/。
+#
+# 构建期取回的插件放在 /opt/lrr-vendor-plugins（不在 Managed/ 里），因为
+# Managed/ 在部署时通常被 bind mount 覆盖，镜像里的内容会被遮蔽。
+# 这里只补齐缺失的文件，不覆盖已有文件，因此：
+#   - 首次启动：managed 插件开箱可用
+#   - 之后从 registry 升级过的版本会被保留，不会被镜像里的旧版本盖回去
+
+VENDOR=/opt/lrr-vendor-plugins
+TARGET=/home/koyomi/lanraragi/lib/LANraragi/Plugin/Managed
+
+[ -d "$VENDOR" ] || exit 0
+[ -d "$TARGET" ] || mkdir -p "$TARGET"
+
+cd "$VENDOR" || exit 0
+
+find . -type f -name '*.pm' | while read -r file; do
+    rel="${file#./}"
+    dest="$TARGET/$rel"
+    if [ ! -f "$dest" ]; then
+        mkdir -p "$(dirname "$dest")"
+        cp "$file" "$dest"
+        echo "Seeded managed plugin: $rel"
+    fi
+done
+
+# 01-lrr-setup 已把 koyomi 的 uid/gid 调成 LRR_UID/LRR_GID，这里跟随它
+chown -R koyomi:koyomi "$TARGET" 2>/dev/null || true

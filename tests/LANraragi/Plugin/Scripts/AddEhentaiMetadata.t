@@ -4,7 +4,10 @@ use utf8;
 
 use Test::More;
 
-use LANraragi::Plugin::Scripts::AddEhentaiMetadata;
+# 该插件现在通过 registry 分发：构建期取回后作为 managed 插件内置，
+# 或由用户从仓库安装。因此只在已安装时运行这些测试。
+plan skip_all => 'LANraragi::Plugin::Managed::Scripts::AddEhentaiMetadata is not installed'
+  unless eval { require LANraragi::Plugin::Managed::Scripts::AddEhentaiMetadata; 1 };
 
 my @archives = (
     { arcid => "archive-success", title => "Success", tags => "artist:someone" },
@@ -15,9 +18,9 @@ my @archives = (
 
 my @plugin_calls;
 my @tag_updates;
-my $logger = bless {}, "LANraragi::Plugin::Scripts::AddEhentaiMetadata::TestLogger";
+my $logger = bless {}, "LANraragi::Plugin::Managed::Scripts::AddEhentaiMetadata::TestLogger";
 
-my %plugin_info = LANraragi::Plugin::Scripts::AddEhentaiMetadata::plugin_info();
+my %plugin_info = LANraragi::Plugin::Managed::Scripts::AddEhentaiMetadata::plugin_info();
 is( $plugin_info{name},      "Add ETagCN Metatdata", "keeps the original plugin name" );
 is( $plugin_info{namespace}, "addehentaimetatdata", "keeps the original plugin namespace" );
 
@@ -25,8 +28,8 @@ is( $plugin_info{namespace}, "addehentaimetatdata", "keeps the original plugin n
     no warnings qw(once redefine);
 
     local *LANraragi::Model::Archive::generate_archive_list = sub { return @archives; };
-    local *LANraragi::Plugin::Scripts::AddEhentaiMetadata::get_plugin_logger = sub { return $logger; };
-    local *LANraragi::Plugin::Scripts::AddEhentaiMetadata::use_plugin = sub {
+    local *LANraragi::Plugin::Managed::Scripts::AddEhentaiMetadata::get_plugin_logger = sub { return $logger; };
+    local *LANraragi::Plugin::Managed::Scripts::AddEhentaiMetadata::use_plugin = sub {
         my ( $namespace, $arcid ) = @_;
         push @plugin_calls, [ $namespace, $arcid ];
 
@@ -39,14 +42,14 @@ is( $plugin_info{namespace}, "addehentaimetatdata", "keeps the original plugin n
 
         return ( {}, { error => "unexpected archive" } );
     };
-    local *LANraragi::Plugin::Scripts::AddEhentaiMetadata::set_tags = sub {
+    local *LANraragi::Plugin::Managed::Scripts::AddEhentaiMetadata::set_tags = sub {
         push @tag_updates, [ @_ ];
     };
 
-    my %result = LANraragi::Plugin::Scripts::AddEhentaiMetadata::run_script(
-        "LANraragi::Plugin::Scripts::AddEhentaiMetadata",
+    my %result = LANraragi::Plugin::Managed::Scripts::AddEhentaiMetadata::run_script(
+        "LANraragi::Plugin::Managed::Scripts::AddEhentaiMetadata",
         { oneshot_param => "True" },
-        0
+        { interval      => 0 }
     );
 
     is_deeply( \%result, { modified => 3, total => 3 }, "returns processed and modified counts" );
@@ -72,7 +75,7 @@ is( $plugin_info{namespace}, "addehentaimetatdata", "keeps the original plugin n
 
 done_testing();
 
-package LANraragi::Plugin::Scripts::AddEhentaiMetadata::TestLogger;
+package LANraragi::Plugin::Managed::Scripts::AddEhentaiMetadata::TestLogger;
 
 sub info  { return; }
 sub warn  { return; }

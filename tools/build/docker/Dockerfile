@@ -105,6 +105,8 @@ FROM base AS runtime
 COPY /tools/build/docker/s6/s6-rc.d/ /etc/s6-overlay/s6-rc.d/
 # Copy setup script as-is since no changes are needed between 2.x and 3.x
 COPY /tools/build/docker/s6/cont-init.d/01-lrr-setup /etc/s6-overlay/s6-rc.d/init/
+# Seeds the plugins vendored from our registry into Plugin/Managed/ on startup
+COPY /tools/build/docker/s6/cont-init.d/02-lrr-vendor-plugins /etc/s6-overlay/s6-rc.d/init/
 
 # Copy build stage files
 COPY --from=build --chown=koyomi:koyomi /home/koyomi/perl5/lib                     /home/koyomi/perl5/lib
@@ -122,6 +124,20 @@ COPY --chown=koyomi:koyomi /locales locales
 COPY --chown=koyomi:koyomi /templates templates
 COPY --chown=koyomi:koyomi /public public
 COPY --chown=koyomi:koyomi /lib lib
+
+# Vendor the plugins this fork distributes through its own registry.
+#
+# They are fetched at build time and staged under /opt, then seeded into
+# Plugin/Managed/ at startup (see cont-init.d/02-lrr-vendor-plugins). They are
+# deliberately NOT placed in Plugin/<Type>/: install-time validation refuses a
+# registry plugin whose namespace already exists in the plugin tree, so
+# shipping a copy as a builtin would make the registry copy impossible to
+# install or upgrade.
+ARG OUGI_REF=main
+COPY --chown=koyomi:koyomi /tools/build/docker/vendor-registry-plugins.pl tools/build/docker/
+RUN OUGI_BASE="https://raw.githubusercontent.com/LemonSoda-RPG/Ougi/${OUGI_REF}" \
+      perl ./tools/build/docker/vendor-registry-plugins.pl /opt/lrr-vendor-plugins && \
+    chown -R koyomi:koyomi /opt/lrr-vendor-plugins
 
 # Persistent volumes
 VOLUME [ "/home/koyomi/lanraragi/content" ]

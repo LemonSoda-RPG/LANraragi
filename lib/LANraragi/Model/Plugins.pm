@@ -799,10 +799,30 @@ sub validate_managed_plugin {
     }
 
     if ( -e $install_path && ( !defined $abs_installed_path || $abs_installed_path ne $install_path ) ) {
-        return ( undef, "Install path is already occupied: $install_path" );
+
+        # A plugin file can already sit at the install path without being
+        # registered as a managed plugin: this fork ships some plugins that way
+        # (fetched from its registry at build time, then seeded into
+        # Plugin/Managed/ on startup). Adopt such a file when it is
+        # byte-identical to the artifact being installed -- installing it then
+        # just records it as managed. Different content is still refused.
+        my $existing_checksum = _sha256_of_file($install_path);
+        return ( undef, "Install path is already occupied: $install_path" )
+          unless defined $existing_checksum && $existing_checksum eq $expected_checksum;
     }
 
     return ( { install_path => $install_path, install_dir => $install_dir, package => $pkg }, undef );
+}
+
+# sha256 of a file's raw bytes, or undef when it can't be read.
+sub _sha256_of_file {
+    my ($path) = @_;
+
+    open( my $fh, '<:raw', $path ) or return undef;
+    local $/;
+    my $content = <$fh>;
+    close $fh;
+    return sha256_hex($content);
 }
 
 # Get absolute path from an installed_path

@@ -6,7 +6,10 @@ use Test::Deep;
 use Test::MockObject;
 use Test::More;
 
-use LANraragi::Plugin::Scripts::DuplicateArchives;
+# 该插件现在通过 registry 分发：构建期取回后作为 managed 插件内置，
+# 或由用户从仓库安装。因此只在已安装时运行这些测试。
+plan skip_all => 'LANraragi::Plugin::Managed::Scripts::DuplicateArchives is not installed'
+  unless eval { require LANraragi::Plugin::Managed::Scripts::DuplicateArchives; 1 };
 
 my $redis_mock = Test::MockObject->new;
 $redis_mock->mock( 'exists', sub { return $_[1] eq "LRR_FILEMAP" ? 1 : 0; } );
@@ -38,9 +41,9 @@ $logger_mock->mock(
 {
     no warnings 'once', 'redefine';
     local *LANraragi::Model::Config::get_redis_config = sub { return $redis_mock; };
-    local *LANraragi::Plugin::Scripts::DuplicateArchives::get_plugin_logger = sub { return $logger_mock; };
+    local *LANraragi::Plugin::Managed::Scripts::DuplicateArchives::get_plugin_logger = sub { return $logger_mock; };
 
-    my %result = LANraragi::Plugin::Scripts::DuplicateArchives::run_script();
+    my %result = LANraragi::Plugin::Managed::Scripts::DuplicateArchives::run_script();
 
     cmp_deeply(
         \%result,

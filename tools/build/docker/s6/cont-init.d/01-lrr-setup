@@ -79,3 +79,10 @@ then
         echo "WARNING: overcommit_memory is set to 0! This might lead to background saving errors if your database is too large."
             echo "Please check https://valkey.io/topics/faq/#background-saving-fails-with-a-fork-error-on-linux for details."
 fi
+
+# Seed the plugins this fork vendors from its registry into Plugin/Managed/.
+# Called from here because an s6-rc oneshot "up" file holds a single command
+# line, so a second script cannot simply be listed in it.
+if [ -x /etc/s6-overlay/s6-rc.d/init/02-lrr-vendor-plugins ]; then
+    /etc/s6-overlay/s6-rc.d/init/02-lrr-vendor-plugins
+fi
