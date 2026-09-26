@@ -61,7 +61,11 @@ echo "Syncing Formula to local tap..."
 cp "${source_formula}" "${tap_formula}"
 
 echo "Pointing tap Formula HEAD to local source checkout..."
-ruby -0pi -e "gsub(%q{head \"https://github.com/Difegue/LANraragi.git\", branch: \"dev\"}, %q{${local_head}})" "${tap_formula}"
+ruby -0pi -e "gsub(%q{head \"https://github.com/LemonSoda-RPG/LANraragi.git\", branch: \"dev\"}, %q{${local_head}})" "${tap_formula}"
+if grep -q 'head "https://github.com/LemonSoda-RPG/LANraragi.git"' "${tap_formula}"; then
+  echo "错误：HEAD 替换失败——公式里的 head 行与本脚本的匹配串不一致，请同步更新" >&2
+  exit 1
+fi
 
 echo "Syncing runtime env template..."
 mkdir -p "$(dirname "${brew_env_example}")"
