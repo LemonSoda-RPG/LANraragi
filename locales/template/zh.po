@@ -1997,6 +1997,9 @@ msgstr ""
 msgid "S: set a Stamp"
 msgstr "S：设置图章"
 
+msgid "Del: delete the current archive (press Del again to confirm)"
+msgstr "Del：删除当前档案（再按一次 Del 确认）"
+
 msgid "Toggle Stamps"
 msgstr "切换图章显示"
 

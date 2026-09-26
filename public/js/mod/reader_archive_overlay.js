@@ -4,6 +4,7 @@
 import * as Server from "./server.js";
 import * as LRR from "./common.js";
 import I18N from "i18n";
+import Swal from "sweetalert2";
 import { state, goToPage, loadContentData, stopAutoNextPage, toggleOverlay, getCurrentChapter, getArchiveForPage } from "./reader_common.js";
 
 export function initializeArchiveOverlay() {
@@ -71,9 +72,15 @@ export function initializeArchiveOverlay() {
     $(document).on("click.filter-stamped", "#filter-stamped", filterStampedOverlay);
 }
 
+// Tracks whether our deletion prompt is currently on screen, so that pressing
+// the delete key a second time can confirm it.
+let deletionPromptOpen = false;
+
 function confirmArchiveDeletion(event) {
-    event.preventDefault();
-    event.stopPropagation();
+    if (event) {
+        event.preventDefault();
+        event.stopPropagation();
+    }
 
     const isTank = state.id.startsWith("TANK_");
     LRR.closeOverlay();
@@ -85,12 +92,26 @@ function confirmArchiveDeletion(event) {
         confirmButtonText: I18N.ConfirmYes,
         reverseButtons: true,
         confirmButtonColor: "#d33",
+        didOpen: () => { deletionPromptOpen = true; },
+        willClose: () => { deletionPromptOpen = false; },
     }).then((result) => {
         if (result.isConfirmed) {
             if (isTank) Server.deleteTankoubon(state.id, () => { document.location.href = "./"; });
             else Server.deleteArchive(state.id, () => { document.location.href = "./"; });
         }
     });
+}
+
+/**
+ * Delete key handler: asks for confirmation, or confirms the prompt that is
+ * already open when the key is pressed again.
+ */
+export function handleDeletionShortcut() {
+    if (deletionPromptOpen) {
+        Swal.getConfirmButton()?.click();
+        return;
+    }
+    confirmArchiveDeletion();
 }
 
 /**

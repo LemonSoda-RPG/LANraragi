@@ -7,7 +7,7 @@ import I18N from "i18n";
 import fscreen from "fscreen";
 import { signal, effect } from "@preact/signals";
 import { initializeStamps, updateStamps, renderMarkers, clearMarkers } from "./reader_stamps.js";
-import { initializeArchiveOverlay, toggleArchiveOverlay, updateArchiveOverlay, addCategoryBadge, removeCategoryBadge } from "./reader_archive_overlay.js";
+import { initializeArchiveOverlay, toggleArchiveOverlay, updateArchiveOverlay, addCategoryBadge, removeCategoryBadge, handleDeletionShortcut } from "./reader_archive_overlay.js";
 import { initializeSettings, toggleSettingsOverlay } from "./reader_options.js";
 
 export let state = {
@@ -576,6 +576,13 @@ function handleShortcuts(e) {
                 changePage("last", true);
             } else {
                 changePage(1, true);
+            }
+            break;
+        case 46: // delete
+            // Same restriction as the delete button in the reader's options,
+            // which is only rendered for logged-in users.
+            if (LRR.isUserLogged()) {
+                handleDeletionShortcut();
             }
             break;
         case 65: // a

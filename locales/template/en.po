@@ -1124,6 +1124,9 @@ msgstr "G: go to page number"
 msgid "S: set a Stamp"
 msgstr "S: set a Stamp"
 
+msgid "Del: delete the current archive (press Del again to confirm)"
+msgstr "Del: delete the current archive (press Del again to confirm)"
+
 msgid "To return to the archive index, touch the arrow pointing down or use Backspace."
 msgstr "To return to the archive index, touch the arrow pointing down or use Backspace."
 
