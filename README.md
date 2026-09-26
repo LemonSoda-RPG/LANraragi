@@ -6,6 +6,8 @@
 [<img src="https://github.com/Difegue/LANraragi/actions/workflows/push-continuous-integration.yml/badge.svg">](https://github.com/Difegue/LANraragi/actions)
 [<img src="https://img.shields.io/discord/612709831744290847">](https://discord.gg/aRQxtbg)
 
+**🌐 [English](README.md) | [简体中文](README.zh-CN.md)**
+
 <img src="public/favicon.ico" width="128">  
   
 LANraragi
