@@ -54,11 +54,15 @@ for my $ns (@wanted) {
 
     my @versions = keys %{ $entry->{versions} };
     die "Plugin '$ns' has no versions\n" unless @versions;
-    my ($version) = sort {
+
+    # 取最新版本：升序排序后取最后一个。别写成取第一个——那是最旧版本，
+    # 插件发布了第二个版本之后才会暴露出来（镜像里会内置旧版）。
+    my @sorted_versions = sort {
         my $a_key = version_key($a);
         my $b_key = version_key($b);
         $a_key->[0] <=> $b_key->[0] || $a_key->[1] <=> $b_key->[1] || $a_key->[2] <=> $b_key->[2];
     } @versions;
+    my $version = $sorted_versions[-1];
 
     my $meta    = $entry->{versions}{$version};
     my $content = fetch("$base/$meta->{artifact}");

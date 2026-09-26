@@ -1,11 +1,16 @@
-on: 
-  push:
-    branches:
-    - dev
-    - test-builds
-    - actions-testing
+# 上游的多架构发布流程：构建 5 个平台的镜像（arm/v6、arm/v7、arm64、386、amd64）
+# 并推送到 difegue/lanraragi，另外还跑一次 Windows MSI 打包。
+#
+# 本 fork 不使用它：目标镜像不是我们的，而它会在每次 push 到 dev 时全部尝试一遍，
+# 只会产生失败记录。日常发布走 .github/workflows/docker-publish.yml
+# （linux/amd64，推到你自己的 Docker Hub）。
+#
+# 这里保留为手动触发，需要多架构时可以参考或手动运行；密钥名已与
+# docker-publish.yml 统一为 DOCKERHUB_USERNAME / DOCKERHUB_TOKEN。
+on:
+  workflow_dispatch:
 env:
-  REGISTRY_IMAGE: difegue/lanraragi
+  REGISTRY_IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/lanraragi
   TAG: nightly
 name: Continuous Delivery 
 jobs:
@@ -26,8 +31,8 @@ jobs:
       uses: ./.github/actions/docker-builder
       with:
         platform: ${{ matrix.platform }}
-        docker-username: ${{ secrets.DOCKER_USERNAME }}
-        docker-password: ${{ secrets.DOCKER_PASSWORD }}
+        docker-username: ${{ secrets.DOCKERHUB_USERNAME }}
+        docker-password: ${{ secrets.DOCKERHUB_TOKEN }}
 
   buildDockerx86:
     name: Build Docker Images (x86)
@@ -44,8 +49,8 @@ jobs:
       uses: ./.github/actions/docker-builder
       with:
         platform: ${{ matrix.platform }}
-        docker-username: ${{ secrets.DOCKER_USERNAME }}
-        docker-password: ${{ secrets.DOCKER_PASSWORD }}
+        docker-username: ${{ secrets.DOCKERHUB_USERNAME }}
+        docker-password: ${{ secrets.DOCKERHUB_TOKEN }}
 
   mergeDocker:
     name: Merge Docker Images
@@ -58,8 +63,8 @@ jobs:
       - name: Docker merge
         uses: ./.github/actions/docker-merge
         with:
-          docker-username: ${{ secrets.DOCKER_USERNAME }}
-          docker-password: ${{ secrets.DOCKER_PASSWORD }}
+          docker-username: ${{ secrets.DOCKERHUB_USERNAME }}
+          docker-password: ${{ secrets.DOCKERHUB_TOKEN }}
 
   buildNightlyMSYS2:
     name: Build and export native Windows version
