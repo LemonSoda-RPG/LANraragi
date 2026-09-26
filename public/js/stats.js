@@ -11,7 +11,7 @@ Stats.initializeAll = function () {
     // bind events to DOM
     $(document).on("click.goback", "#goback", () => { window.location.replace("./"); });
 
-    Server.callAPI("/api/database/stats?minweight=4&hide_excluded_namespaces=true", "GET", null, I18N.TagStatsLoadFailure,
+    Server.callAPI("/api/database/stats?minweight=2&hide_excluded_namespaces=true", "GET", null, I18N.TagStatsLoadFailure,
         (data) => {
             $("#statsLoading").hide();
             $("#tagcount").html(data.length);
