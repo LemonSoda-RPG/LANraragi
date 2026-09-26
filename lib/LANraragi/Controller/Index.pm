@@ -5,6 +5,7 @@ use utf8;
 use URI::Escape;
 use Redis;
 use Encode;
+use Digest::SHA qw(sha256_hex);
 use File::Basename;
 
 use LANraragi::Utils::Generic qw(generate_themes_header get_authenticator);
@@ -47,14 +48,30 @@ sub index {
 
     my $self = shift;
 
-    #Checking if the user still has the default password enabled
-    my $hash = $self->LRR_CONF->get_password;
+    # Checking if the user still has the default password enabled.
+    #
+    # This used to run a bcrypt verification on every single index page load,
+    # which costs ~0.6s per request at bcrypt's default cost. Cache the answer
+    # in Redis under a digest of the stored hash (it can only change when the
+    # password changes), and skip the check entirely when password protection is
+    # disabled, since the result is false either way.
+    my $passcheck = 0;
+    if ( $self->LRR_CONF->enable_pass ) {
+        my $hash = $self->LRR_CONF->get_password;
+        $hash =~ s/^\{CRYPT\}//;    # Convert RFC 2307 to bare hash
 
-    if ( $hash =~ /{CRYPT}(.*)/ ) { # Convert RFC 2307 to bare hash
-        $hash = $1;
+        my $redis  = $self->LRR_CONF->get_redis_config;
+        my $digest = sha256_hex($hash);
+        my $cached = $redis->get("LRR_DEFAULTPASS_CHECK");
+
+        if ( defined $cached && $cached =~ /^\Q$digest\E:([01])$/ ) {
+            $passcheck = $1;
+        } else {
+            $passcheck = get_authenticator->verify_password( "kamimamita", $hash ) ? 1 : 0;
+            $redis->set( "LRR_DEFAULTPASS_CHECK", "$digest:$passcheck" );
+        }
+        $redis->quit();
     }
-
-    my $passcheck = ( get_authenticator->verify_password( "kamimamita", $hash ) && $self->LRR_CONF->enable_pass );
 
     my $userlogged = $self->LRR_CONF->enable_pass == 0 || $self->session('is_logged');
 

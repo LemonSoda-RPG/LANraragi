@@ -337,7 +337,7 @@ export function handleQuickSearch(e) {
  */
 export function loadTagSuggestions() {
     // Query the tag cloud API to get the most used tags, excluding configured namespaces.
-    Server.callAPI("/api/database/stats?minweight=2&hide_excluded_namespaces=true", "GET", null, I18N.TagStatsLoadFailure,
+    Server.callAPI("/api/database/stats?minweight=4&hide_excluded_namespaces=true", "GET", null, I18N.TagStatsLoadFailure,
         (data) => {
             // Get namespaces objects in the data array to fill the namespace-sortby combobox
             const namespacesSet = new Set(data.map((element) => (element.namespace === "parody" ? "series" : element.namespace)));

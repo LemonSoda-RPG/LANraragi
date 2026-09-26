@@ -502,7 +502,15 @@ sub get_authenticator {
     my $authenticator = Crypt::Passphrase->new(
         encoder => {
             module  => "Bcrypt",
-            subtype => "2a"
+            subtype => "2a",
+
+            # Bcrypt's default cost here is 14, which takes ~0.6s to verify on a
+            # desktop and over a second on slower hardware. Password
+            # verification is on the hot path (login, plus the password-check on
+            # every index page load), so use 12: still within current
+            # recommendations, but roughly 4x faster. Existing hashes are
+            # rehashed to this cost on the next successful login.
+            cost => 12
         },
     );
     return $authenticator;

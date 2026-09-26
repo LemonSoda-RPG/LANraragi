@@ -44,7 +44,7 @@ Edit.initializeAll = function () {
     // Hide tag input while statistics load
     Edit.hideTags();
 
-    Server.callAPI("/api/database/stats?minweight=2", "GET", null, I18N.TagStatsLoadFailure,
+    Server.callAPI("/api/database/stats?minweight=4", "GET", null, I18N.TagStatsLoadFailure,
         (data) => {
             Edit.suggestions = data.reduce((res, tag) => {
                 let label = tag.text;

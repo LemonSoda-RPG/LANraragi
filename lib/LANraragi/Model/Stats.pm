@@ -9,7 +9,7 @@ use utf8;
 
 use Redis;
 use File::Find;
-use Mojo::JSON qw(encode_json);
+use Mojo::JSON qw(encode_json decode_json);
 use LANraragi::Model::Tankoubon;
 
 use LANraragi::Utils::Generic  qw(is_archive intersect_arrays);
@@ -17,6 +17,11 @@ use LANraragi::Utils::String   qw(trim trim_CRLF trim_url);
 use LANraragi::Utils::Redis    qw(redis_decode redis_encode);
 use LANraragi::Utils::Logging  qw(get_logger);
 use LANraragi::Utils::Database qw(get_arcsize);
+
+# How long a built tag cloud stays cached, in seconds. Short enough that new
+# tags show up quickly, long enough that the index page doesn't rebuild it on
+# every load.
+use constant TAG_STATS_CACHE_TTL => 60;
 
 sub get_archive_count {
     my $redis = LANraragi::Model::Config->get_redis_search;
@@ -225,13 +230,29 @@ sub build_tag_stats {
     my $logger = get_logger( "Tag Stats", "lanraragi" );
     $logger->debug("Serving tag statistics with a minimum weight of $minscore");
 
+    my @excluded_list = @{ $excluded_ns || [] };
+
     # Convert excluded namespaces into a hash for quick lookup
-    my %excluded = map { $_ => 1 } @{ $excluded_ns || [] };
+    my %excluded = map { $_ => 1 } @excluded_list;
+
+    # The result is cached: rebuilding the whole cloud costs over a second on a
+    # large library (and several seconds on slower hardware), and the index page
+    # asks for it on every load. The key covers the arguments that change the
+    # answer, and the TTL keeps new tags from being hidden for long.
+    my $cache_key = "LRR_TAGSTATS_" . $minscore . "_" . ( @excluded_list ? join( ",", sort @excluded_list ) : "all" );
 
     # Login to Redis and grab the stats sorted set
-    my $redis    = LANraragi::Model::Config->get_redis_search;
+    my $redis  = LANraragi::Model::Config->get_redis_search;
+    my $cached = $redis->get($cache_key);
+    if ($cached) {
+        $redis->quit();
+        my $tags = eval { decode_json($cached) };
+        return $tags if $tags;
+        $logger->warn("Cached tag stats for '$cache_key' could not be decoded, rebuilding.");
+        $redis = LANraragi::Model::Config->get_redis_search;
+    }
+
     my %tagcloud = $redis->zrangebyscore( "LRR_STATS", $minscore, "+inf", "WITHSCORES" );
-    $redis->quit();
 
     # Go through the data from stats and build an array
     my @tags;
@@ -250,6 +271,11 @@ sub build_tag_stats {
 
         push( @tags, { text => $t, namespace => $ns, weight => $w } );
     }
+
+    eval { $redis->setex( $cache_key, TAG_STATS_CACHE_TTL, encode_json( \@tags ) ) };
+    $logger->warn("Could not cache tag stats for '$cache_key': $@") if $@;
+
+    $redis->quit();
 
     return \@tags;
 }
