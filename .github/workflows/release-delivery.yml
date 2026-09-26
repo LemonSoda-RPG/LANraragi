@@ -1,6 +1,8 @@
-on: 
-  release:
-    types: [published]
+# 上游的发布流程：构建 Windows MSI 安装包 + 5 平台镜像 + Discord 通知，
+# 目标镜像同样是 difegue/lanraragi。本 fork 不用它（不发布 Windows/Homebrew，
+# 镜像发布走 docker-publish.yml），改为仅手动触发以免发 release 时红。
+on:
+  workflow_dispatch:
 env:
   REGISTRY_IMAGE: difegue/lanraragi
   TAG: latest

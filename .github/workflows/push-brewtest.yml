@@ -1,4 +1,8 @@
-on: push
+# 上游的 Homebrew 测试：在 macOS runner 上构建 brew formula。
+# 本 fork 不在 CI 里跑 Homebrew（每次 push 都会占用 macOS runner 额度），
+# 保留为手动触发，需要时再跑。
+on:
+  workflow_dispatch:
 name: "Test Homebrew"
 jobs:
   testBrew:
