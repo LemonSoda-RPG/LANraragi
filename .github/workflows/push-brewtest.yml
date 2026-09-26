@@ -1,13 +1,33 @@
-# 上游的 Homebrew 测试：在 macOS runner 上构建 brew formula。
-# 本 fork 不在 CI 里跑 Homebrew（每次 push 都会占用 macOS runner 额度），
-# 保留为手动触发，需要时再跑。tap 名已改成本 fork 的 owner。
+# 在 macOS runner 上从源码构建并测试 Homebrew 公式。
+#
+# 验证的是 tools/build/homebrew/Lanraragi.rb 在当前代码上确实能装、能跑：
+# 公式的 test 段会执行 `npm test`（即完整的 Perl 测试套件，`prove -r -l tests/`），
+# 之后再做一次启动冒烟测试。这也是唯一在 macOS 上跑测试套件的地方
+# （macOS 上装了 imagemagick，所以那两个在 Docker 生产镜像里必然失败的
+#  ImageMagick 测试在这里能真正执行）。
+#
+# 触发：push 到 dev，以及手动触发。
+#
+# 注意两点：
+#   - 一次构建通常 20–40 分钟（要从源码编译一堆依赖），所以用 concurrency
+#     取消被后续 push 顶掉的运行，避免连续 push 排队跑好几个。
+#   - 这里只"验证公式"，不产出 bottle（预编译包）。要发布 bottle / 搭 tap 分发
+#     是另一套东西，见 tools/build/homebrew/build-bottle.sh。
 on:
+  push:
+    branches: [dev]
   workflow_dispatch:
+
+concurrency:
+  group: brewtest-${{ github.ref }}
+  cancel-in-progress: true
+
 name: "Test Homebrew"
 jobs:
   testBrew:
     name: Test Homebrew version
     runs-on: macos-latest
+    timeout-minutes: 120
     steps:
     - uses: actions/checkout@v6
     - name: Build and test bundled homebrew formula
@@ -22,7 +42,11 @@ jobs:
         sed -i.bck "s/COMMIT_HASH/$(git rev-parse --verify HEAD)/" Lanraragi.rb
 
         echo "Copying test formula to custom tap to allow installation"
-        TAP_DIR="$(brew --repository)/Library/Taps/$(echo "$TAP" | tr '[:upper:]' '[:lower:]' | tr '/' '/homebrew-')"
+        # Homebrew 的 tap 目录约定是 Library/Taps/<owner>/homebrew-<name>；
+        # 不能用 `tr '/' '/homebrew-'`（tr 的第二组只取首字符，等于空操作）
+        TAP_DIR="$(brew --repository)/Library/Taps/$(printf '%s' "$TAP" | tr '[:upper:]' '[:lower:]' | sed 's|/|/homebrew-|')"
+        echo "Tap directory: $TAP_DIR"
+        test -d "$TAP_DIR" || { echo "Tap 目录不存在：$TAP_DIR" >&2; exit 1; }
         cp Lanraragi.rb "$TAP_DIR/Formula/"
 
         brew install --force --verbose --build-from-source "$TAP/lanraragi"
