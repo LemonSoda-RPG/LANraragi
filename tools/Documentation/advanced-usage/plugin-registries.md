@@ -44,8 +44,15 @@ A registry must have the following file structure:
 |  |- ...
 ```
 
-The `registry.json` holds info about all plugins contained in a registry (you can also generate it with [generate_registry.pl](https://github.com/psilabs-dev/lrr-plugins-demo/blob/main/generate_registry.pl)):
+The `registry.json` holds info about all plugins contained in a registry.  
+You can write it by hand, or generate it with [generate_registry.pl](https://github.com/difegue/lanraragi/blob/dev/tools/generate_registry.pl)):  
 
+```
+cpanm JSON::PP
+perl generate_registry.pl [folder of your registry]
+```
+
+The JSON should look like the following:  
 ```json
 {
     "generated_at": "...",

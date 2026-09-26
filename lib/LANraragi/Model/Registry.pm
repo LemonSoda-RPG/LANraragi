@@ -82,6 +82,15 @@ sub create_registry {
         }
     }
     $logger->info("Created registry '$registry_id' (name: $name, provider: $provider)");
+
+    # Get registry data immediately after creation. 
+    # Creation still succeeds even if this fails (e.g. offline);
+    # the registry is simply left without a cached index until refreshed.
+    my ( $refresh_status, undef, $refresh_error ) = refresh_registry( $registry_id, $redis );
+    unless ( $refresh_status == 200 ) {
+        $logger->warn("Initial refresh of newly created registry '$registry_id' failed: $refresh_error");
+    }
+
     return ( $registry_id, undef );
 }
 
@@ -96,6 +105,27 @@ sub get_registry {
     return ( undef, 404, "This registry doesn't exist." ) unless %config;
     $config{id} = $registry_id;
     return ( \%config, 200, undef );
+}
+
+# Read the cached registry.json index for a registry, without fetching from source.
+# Returns the decoded index (hashref), or undef if no cache exists or it fails to decode.
+sub get_cached_index {
+    my ( $registry_id, $redis ) = @_;
+
+    my ($suffix) = $registry_id =~ /^REG_(\d{10})$/;
+    return unless $suffix;
+
+    my $registry_index_key = "REG_INDEX_$suffix";
+    my $cached_json = $redis->get($registry_index_key);
+    return unless defined $cached_json;
+
+    my $index = eval { decode_json($cached_json) };
+    if ($@) {
+        my $logger = get_logger( "Registry", "lanraragi" );
+        $logger->warn("Registry '$registry_id': failed to decode cached index: $@");
+        return;
+    }
+    return $index;
 }
 
 sub get_registry_list {
@@ -232,8 +262,8 @@ sub delete_registry {
         return ( 500, "Redis error while deleting registry." );
     }
 
-    if ( ( $redis->hget( 'LRR_CONFIG', 'ougi' ) || "" ) eq $registry_id ) {
-        $redis->hdel( 'LRR_CONFIG', 'ougi' );
+    if ( ( $redis->hget( 'LRR_CONFIG', 'default_registry' ) || "" ) eq $registry_id ) {
+        $redis->hdel( 'LRR_CONFIG', 'default_registry' );
         $logger->info("Cleared default-registry pointer that referenced deleted '$registry_id'.");
     }
 
@@ -243,26 +273,26 @@ sub delete_registry {
 }
 
 # Get the configured default registry id, or empty string if unset.
-sub get_ougi {
+sub get_default_registry {
     my ($redis) = @_;
-    return $redis->hget( 'LRR_CONFIG', 'ougi' ) || "";
+    return $redis->hget( 'LRR_CONFIG', 'default_registry' ) || "";
 }
 
 # Set the configured default registry to $registry_id.
 # Returns ( $status_code, $registry_id, $message ).
-sub update_ougi {
+sub update_default_registry {
     my ( $registry_id, $redis ) = @_;
     my ( $registry, $lookup_status, $lookup_error ) = get_registry( $registry_id, $redis );
     return ( $lookup_status, $registry_id, $lookup_error ) unless $registry;
-    $redis->hset( 'LRR_CONFIG', 'ougi', $registry_id );
+    $redis->hset( 'LRR_CONFIG', 'default_registry', $registry_id );
     return ( 200, $registry_id, "success" );
 }
 
 # Clear the configured default registry. Returns the previously-set id (empty string if unset).
-sub remove_ougi {
+sub remove_default_registry {
     my ($redis) = @_;
-    my $registry_id = $redis->hget( 'LRR_CONFIG', 'ougi' ) || "";
-    $redis->hdel( 'LRR_CONFIG', 'ougi' );
+    my $registry_id = $redis->hget( 'LRR_CONFIG', 'default_registry' ) || "";
+    $redis->hdel( 'LRR_CONFIG', 'default_registry' );
     return $registry_id;
 }
 

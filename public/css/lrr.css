@@ -145,8 +145,10 @@ table thead .sorting_disabled a:after {
 }
 
 .paginate_button {
+  box-sizing: border-box;
   min-width: 2rem;
   width: auto !important;
+  padding: 0 10px;
 }
 
 .ellipsis {
@@ -212,6 +214,7 @@ p#nb {
   font-size: 10pt;
   padding: 3px 0px 7px;
   vertical-align: top;
+  overflow-wrap: anywhere;
 }
 
 .caption-tags {
@@ -840,8 +843,8 @@ body.swal2-shown>[aria-hidden="true"] {
   text-align: left;
 }
 
-#changelog>*>img {
-  max-width: 400px;
+#changelog img {
+  max-width: min(400px, 100%);
   height: auto;
 }
 
