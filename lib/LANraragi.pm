@@ -156,6 +156,14 @@ sub startup {
         }
     }
 
+    # Bring registry-installed plugins up to date with the index just refreshed,
+    # so restarting the container is enough to pick up published updates.
+    # Set LRR_AUTO_UPDATE_PLUGINS=0 to keep plugins pinned to what is installed.
+    if ( $ENV{LRR_AUTO_UPDATE_PLUGINS} // 1 ) {
+        my @upgraded = LANraragi::Model::Plugins::upgrade_managed_plugins($redis_config);
+        $self->LRR_LOGGER->info( "Startup plugin upgrade: " . join( ", ", @upgraded ) ) if @upgraded;
+    }
+
     # Reset restart flag.
     LANraragi::Model::Server::clear_restart_pending($redis_config);
     $redis_config->quit();

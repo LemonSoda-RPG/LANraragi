@@ -17,6 +17,7 @@ use Mojo::File;
 use Mojo::JSON qw(decode_json encode_json);
 use Mojo::UserAgent;
 use Data::Dumper;
+use SemVer;
 
 use LANraragi::Utils::String   qw(trim);
 use LANraragi::Utils::Database qw(set_tags set_title set_summary);
@@ -574,6 +575,65 @@ sub install_plugin {
         sha256             => $plugin_metadata->{sha256},
     );
     return ( 200, \%installed_meta, undef );
+}
+
+# Bring registry-installed plugins up to the newest version published in the
+# registry they came from. The registry index must have been refreshed already
+# (LANraragi.pm does that at server start), since the newest version is read
+# from the cached index rather than fetched here.
+#
+# Only plugins that were actually installed through a registry are touched:
+# built-ins and side-loaded plugins are left alone, and a plugin is never moved
+# backwards, so a stale index cannot downgrade anything.
+#
+# Returns a list of "namespace from -> to" strings for the upgrades performed.
+sub upgrade_managed_plugins {
+    my ($redis) = @_;
+
+    my $logger = get_logger( "Registry", "lanraragi" );
+    my @upgraded;
+
+    for my $registry_id ( sort $redis->keys("REG_??????????") ) {
+        my ($suffix) = $registry_id =~ /^REG_(\d{10})$/;
+        next unless $suffix;
+
+        my $cached_index = $redis->get("REG_INDEX_$suffix");
+        next unless $cached_index;
+
+        my $index = eval { decode_json($cached_index) };
+        next unless $index && ref $index->{plugins} eq "HASH";
+
+        for my $namespace ( sort keys %{ $index->{plugins} } ) {
+            my $namerds        = "LRR_PLUGIN_" . uc($namespace);
+            my $installed_path = $redis->hget( $namerds, "installed_path" ) // "";
+            my $source         = $redis->hget( $namerds, "installed_registry" ) // "";
+
+            # Only plugins this registry installed, and only managed ones.
+            next unless $installed_path =~ m{Plugin/Managed/};
+            next unless $source eq $registry_id;
+
+            my $current = $redis->hget( $namerds, "installed_version" ) // "";
+            my $latest  = eval { resolve_max_version( $index->{plugins}{$namespace} ) };
+            next unless $latest;
+            next if $current eq $latest;
+
+            my $is_newer = eval { $current ne "" && SemVer->new($latest) > SemVer->new($current) };
+            next unless $is_newer;
+
+            my ( $status, undef, $message ) =
+              install_plugin( $namespace, $redis, $registry_id, $latest, 1 );
+
+            if ( $status == 200 ) {
+                push @upgraded, "$namespace $current -> $latest";
+                $logger->info("Upgraded plugin '$namespace' from $current to $latest.");
+            } else {
+                $logger->warn(
+                    "Could not upgrade plugin '$namespace' to $latest: " . ( $message // "status $status" ) );
+            }
+        }
+    }
+
+    return @upgraded;
 }
 
 # Uninstall a plugin by deleting it from disk and cleaning up Redis.
