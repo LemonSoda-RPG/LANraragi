@@ -554,9 +554,18 @@ sub extract_single_file ( $archive, $filepath ) {
         my $contents = "";
         my $peek     = Archive::Libarchive::Peek->new( filename => $archive );
 
-        # This sub can receive either encoded or raw filenames, so we have to test for both.
-        $contents = $peek->file($filepath) // $peek->file(redis_encode($filepath));
-        if (defined($contents)) {
+        # Callers hand us the page name either as a decoded string or as raw
+        # bytes, and archives written without the UTF-8 flag store whatever the
+        # creating tool had. libarchive only accepts bytes: a decoded string
+        # makes the XS call die with "Wide character in subroutine entry", which
+        # used to abort the whole request before the fallback could run. Try
+        # each plausible encoding and keep the one that names an actual entry.
+        for my $candidate ( $filepath, encode_utf8($filepath), redis_encode($filepath) ) {
+            $contents = eval { $peek->file($candidate) };
+            last if defined $contents;
+        }
+
+        if ( defined($contents) ) {
             $logger->debug("Found file $filepath in archive $archive");
         }
 

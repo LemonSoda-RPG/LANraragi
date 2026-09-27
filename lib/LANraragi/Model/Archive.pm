@@ -8,6 +8,7 @@ use warnings;
 use utf8;
 
 use Cwd 'abs_path';
+use Encode qw(encode_utf8);
 use Mojo::Date;
 use Digest::SHA qw(sha1_hex);
 use Redis;
@@ -287,7 +288,9 @@ sub serve_page {
     my $resize = LANraragi::Model::Config->enable_resize
         ? LANraragi::Model::Config->get_threshold . "-" . LANraragi::Model::Config->get_readquality
         : "raw";
-    my $etag    = '"' . sha1_hex("$id\0$path\0$resize") . '"';
+    # Page names are decoded strings for most archives, and hashing a decoded
+    # string with the UTF-8 flag on makes Digest::SHA die on wide characters.
+    my $etag    = '"' . sha1_hex( encode_utf8("$id\0$path\0$resize") ) . '"';
     my $headers = $self->res->headers;
     $headers->etag($etag);
     $headers->cache_control("private, max-age=86400");
