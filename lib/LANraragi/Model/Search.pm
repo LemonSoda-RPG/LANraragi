@@ -53,6 +53,15 @@ sub do_search ( $filter, $category_id, $start, $sortkey, $sortorder, $newonly, $
       redis_encode("$category_id-$filter-$sortkey-$sortorder_inv-$newonly-$untaggedonly-$grouptanks-$hidecompleted");
     my ( $cachehit, @filtered ) = check_cache( $cachekey, $cachekey_inv );
 
+    # History-sorted searches can't use the search cache (setting lastreadtime
+    # doesn't, and shouldn't, cachebust it), but they don't have to re-scan the
+    # whole library on every request either: keep the result for a few seconds.
+    my $lastread_key = "LRR_LASTREADCACHE_" . $cachekey;
+    if ( $sortkey eq "lastread" ) {
+        my $cached = $redis->get($lastread_key);
+        ( $cachehit, @filtered ) = ( 1, @{ thaw $cached } ) if $cached;
+    }
+
     # Don't use cache for history searches since setting lastreadtime doesn't (and shouldn't) cachebust
     unless ( $cachehit && $sortkey ne "lastread" ) {
         $logger->debug("No cache available (or history-sorted search), doing a full DB parse.");
@@ -60,8 +69,13 @@ sub do_search ( $filter, $category_id, $start, $sortkey, $sortorder, $newonly, $
         ( $keyed_count, @filtered ) =
           search_uncached( $category_id, $filter, $sortkey, $sortorder, $newonly, $untaggedonly, $grouptanks, $hidecompleted );
 
-        # Cache this query in the search database, prepending the keyed count for partition-aware cache inversion
-        eval { $redis->hset( "LRR_SEARCHCACHE", $cachekey, nfreeze [ $keyed_count, @filtered ] ); };
+        if ( $sortkey eq "lastread" ) {
+            eval { $redis->setex( $lastread_key, 10, nfreeze [ $keyed_count, @filtered ] ); };
+        } else {
+
+            # Cache this query in the search database, prepending the keyed count for partition-aware cache inversion
+            eval { $redis->hset( "LRR_SEARCHCACHE", $cachekey, nfreeze [ $keyed_count, @filtered ] ); };
+        }
     }
     $redis->quit();
 

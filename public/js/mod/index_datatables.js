@@ -9,6 +9,7 @@ export let dataTable = {};
 let originalTitle = document.title;
 let isComingFromPopstate = false;
 export let currentSearch = "";
+let pendingSearch;
 
 /**
  * Initialize DataTables.
@@ -125,6 +126,16 @@ export function initializeAll() {
  * @param {number} page Page to load
  */
 export function doSearch(page) {
+    // Page setup calls this several times in a row (and clicking around can too);
+    // only the last call of a burst needs to reach the server.
+    clearTimeout(pendingSearch);
+    pendingSearch = setTimeout(() => runSearch(page), 30);
+}
+
+/**
+ * @param {number} page Page to load
+ */
+function runSearch(page) {
     // Add the selected category to the tags column so it's picked up by the search engine
     // This allows for the regular search bar to be used in conjunction with categories.
     dataTable.column(".tags.itd").search(Index.selectedCategory);

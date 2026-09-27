@@ -6,6 +6,10 @@ import I18N from "i18n";
 
 let isScriptRunning = false;
 
+// In-flight GET requests, keyed by URL. Several parts of a page ask for the same
+// resource while it's being set up; sharing one request avoids firing duplicates.
+const inFlightGets = new Map();
+
 /**
  * Call that shows a popup to the user on success/failure.
  * Returns the promise so you can add final callbacks if needed.
@@ -18,8 +22,23 @@ let isScriptRunning = false;
  */
 export function callAPI(endpoint, method, successMessage, errorMessage, successCallback) {
     let endpointUrl = new LRR.ApiURL(endpoint);
-    return fetch(endpointUrl, { method })
-        .then((response) => response.json())
+    const key = endpointUrl.toString();
+
+    let request;
+    const pending = method === "GET" ? inFlightGets.get(key) : undefined;
+    if (pending) {
+        // Hand each caller its own copy: callers sort or otherwise modify the data.
+        request = pending.then((data) => JSON.parse(JSON.stringify(data)));
+    } else {
+        request = fetch(endpointUrl, { method })
+            .then((response) => response.json());
+        if (method === "GET") {
+            inFlightGets.set(key, request);
+            request.then(() => inFlightGets.delete(key), () => inFlightGets.delete(key));
+        }
+    }
+
+    return request
         .then((data) => {
 
             // Handle OpenAPI-style error messages (HTTP status code + message)
