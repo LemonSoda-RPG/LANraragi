@@ -8,6 +8,8 @@ use warnings;
 use utf8;
 
 use Cwd 'abs_path';
+use Mojo::Date;
+use Digest::SHA qw(sha1_hex);
 use Redis;
 use Mojo::JSON  qw(decode_json encode_json);
 use Time::HiRes qw(usleep);
@@ -231,7 +233,21 @@ sub serve_thumbnail {
         return;
     } else {
 
-        # Simply serve the thumbnail.
+        # Simply serve the thumbnail, with validators attached: the index page
+        # asks for one thumbnail per archive on every visit, and without them
+        # the browser re-downloads the whole grid each time.
+        my ( $mtime, $size ) = ( stat $thumbname )[ 9, 7 ];
+        my $etag = sprintf '"%x-%x"', $mtime, $size;
+        my $res  = $self->res->headers;
+        $res->etag($etag);
+        $res->last_modified( Mojo::Date->new($mtime)->to_string );
+        $res->cache_control("public, max-age=86400");
+
+        if ( index( $self->req->headers->if_none_match // "", $etag ) >= 0 ) {
+            $self->rendered(304);
+            return;
+        }
+
         $self->render_file( filepath => $thumbname );
     }
 }
@@ -263,6 +279,23 @@ sub serve_page {
     my $logger = get_logger( "File Serving", "lanraragi" );
 
     $logger->debug("Page /$id/$path was requested");
+
+    # A page is a pure function of the archive (whose id is derived from its
+    # contents), the page path and the resize settings, so the same URL always
+    # yields the same bytes: hand the browser a validator instead of
+    # re-extracting and re-sending the page on every visit.
+    my $resize = LANraragi::Model::Config->enable_resize
+        ? LANraragi::Model::Config->get_threshold . "-" . LANraragi::Model::Config->get_readquality
+        : "raw";
+    my $etag    = '"' . sha1_hex("$id\0$path\0$resize") . '"';
+    my $headers = $self->res->headers;
+    $headers->etag($etag);
+    $headers->cache_control("private, max-age=86400");
+
+    if ( index( $self->req->headers->if_none_match // "", $etag ) >= 0 ) {
+        $self->rendered(304);
+        return;
+    }
 
     # Apply resizing transformation if set in Settings
     if ( LANraragi::Model::Config->enable_resize ) {
