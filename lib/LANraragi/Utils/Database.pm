@@ -8,7 +8,7 @@ use feature qw(signatures);
 no warnings 'experimental::signatures';
 
 use Digest::SHA qw(sha256_hex);
-use Mojo::JSON  qw(decode_json);
+use Mojo::JSON  qw(decode_json encode_json);
 use Encode;
 use File::Basename;
 use Redis;
@@ -33,6 +33,14 @@ our @EXPORT_OK = qw(
   get_archive get_archive_json get_archive_json_multi get_tags get_arcsize add_arcsize add_pagecount add_timestamp_tag add_archive_to_redis
   redis_decode redis_encode
 );
+
+use constant ARCHIVE_JSON_CACHE_MIN_IDS => 1000;
+
+# How long a cached full listing lives. The archive data itself may change
+# without invalidate_cache being called (a manual Redis edit, a script writing
+# straight to the DB), so the entry expires on its own as a backstop. It is only
+# ever a stale copy of data that is still in Redis, never the source of truth.
+use constant ARCHIVE_JSON_CACHE_TTL => 900;
 
 # Creates a DB entry for a file path with the given ID.
 # This function doesn't actually require the file to exist at its given location.
@@ -176,6 +184,37 @@ sub get_archive_json ( $redis, $id ) {
 # Uses Redis' MULTI to get an archive JSON for each ID.
 sub get_archive_json_multi (@ids) {
 
+    # Building these JSONs costs ~24s for a full library (measured: the unicode
+    # repair in each build_json call is 98% of it), and the result only changes
+    # when an archive is added, removed or edited — every one of which already
+    # calls invalidate_cache. So a large result is cached, keyed by the exact ID
+    # list, and dropped whenever that hook fires.
+    #
+    # Only large lists are cached: a search page of 100 is quick to rebuild and
+    # giving every page its own entry would grow the cache for no benefit.
+    my $cache_key = '';
+    if ( scalar(@ids) >= ARCHIVE_JSON_CACHE_MIN_IDS ) {
+        my $redis_cache = LANraragi::Model::Config->get_redis_search;
+        $cache_key = "LRR_ARCHIVEJSON:" . sha256_hex( join( ',', sort @ids ) );
+        my $cached = $redis_cache->get($cache_key);
+        $redis_cache->quit;
+        if ( defined $cached && length $cached ) {
+            # A cached copy is an optimisation, never a source of truth: if it
+            # cannot be read the request simply rebuilds, so a truncated or
+            # hand-edited entry degrades to a slow answer instead of an error.
+            my $decoded;
+            eval { $decoded = decode_json($cached) };
+            if ( $@ || ref($decoded) ne 'ARRAY' ) {
+                get_logger("Archives", "lanraragi")
+                  ->warn("Cached archive listing was unreadable, rebuilding: $@");
+            } else {
+                get_logger("Archives", "lanraragi")->info(
+                    sprintf( "get_archive_json_multi: %d ids served from cache", scalar @ids ) );
+                return @$decoded;
+            }
+        }
+    }
+
     my $redis = LANraragi::Model::Config->get_redis;
 
     # Get the archive JSON for each ID.
@@ -221,6 +260,18 @@ sub get_archive_json_multi (@ids) {
         }
     }
 
+    if ( $cache_key ne '' ) {
+        my $redis_cache = LANraragi::Model::Config->get_redis_search;
+        $redis_cache->setex( $cache_key, ARCHIVE_JSON_CACHE_TTL, encode_json( \@archives ) );
+        $redis_cache->quit;
+        # Worth logging: it marks the request that pays the full rebuild cost,
+        # so a slow listing can be told apart from a cached one.
+        get_logger("Archives", "lanraragi")->info(
+            sprintf( "get_archive_json_multi: cached %d archives for %ds",
+                scalar @archives, ARCHIVE_JSON_CACHE_TTL )
+        );
+    }
+
     return @archives;
 }
 
@@ -240,7 +291,9 @@ sub build_json ( $id, %hash ) {
     $file = create_path($file);
 
     # Return undef if the file doesn't exist.
-    return unless ( defined($file) && -e $file );
+    unless ( defined($file) && -e $file ) {
+        return;
+    }
 
     # Parameters have been obtained, let's decode them.
     ( $_ = LANraragi::Utils::Redis::redis_decode($_) ) for ( $name, $title, $tags, $summary );
@@ -616,6 +669,13 @@ sub invalidate_cache ( $rebuild_indexes = 0 ) {
 
     my $redis = LANraragi::Model::Config->get_redis_search;
     $redis->del("LRR_SEARCHCACHE");
+
+    # The cached full listings are keyed by the exact ID list, so they cannot be
+    # deleted by name. Any change to an archive has to drop all of them; a
+    # KEYS/SCAN over this one prefix is cheap and happens on writes only.
+    my @stale = $redis->keys("LRR_ARCHIVEJSON:*");
+    $redis->del(@stale) if @stale;
+
     $redis->hset( "LRR_SEARCHCACHE", "created", time );
     $redis->quit();
 
