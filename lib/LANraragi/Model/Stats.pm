@@ -23,6 +23,18 @@ use LANraragi::Utils::Database qw(get_arcsize);
 # every load.
 use constant TAG_STATS_CACHE_TTL => 60;
 
+# Fields read in bulk by build_stat_hashes and then consulted instead of Redis.
+#
+# Declared here, before any sub that uses them: under `use strict` a variable
+# has to be declared before the code that mentions it is compiled, and these are
+# used by build_stat_hashes further down.
+#
+# `$STATS_PREFETCHED` records that the prefetch ran, so an absent entry then
+# means "this archive has no such field" — what `hexists` used to report.
+# Without it a missing entry is indistinguishable from "not prefetched".
+our $STATS_PREFETCHED = 0;
+our ( %STATS_TAGS, %STATS_TITLES, %STATS_ISNEW );
+
 sub get_archive_count {
     my $redis = LANraragi::Model::Config->get_redis_search;
 
@@ -166,9 +178,7 @@ sub build_stat_hashes {
 # `persistent` records that the prefetch ran: an absent entry then means "this
 # archive has no such field", which is exactly what `hexists` used to report.
 # Without it, a missing entry would be indistinguishable from "not prefetched".
-our $STATS_PREFETCHED = 0;
-our ( %STATS_TAGS, %STATS_TITLES, %STATS_ISNEW );
-
+#
 # Reads tags, title and isnew for every given archive in a single round trip.
 #
 # build_stat_hashes calls this once; the loops that follow then do no reads of
