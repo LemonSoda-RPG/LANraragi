@@ -27,7 +27,7 @@ my @wanted = split /,/, ( $ENV{OUGI_PLUGINS} // 'etagcn,addehentaimetatdata,dupl
 
 my %TYPE_DIR = ( metadata => 'Metadata', download => 'Download', login => 'Login', script => 'Scripts' );
 
-sub fetch {
+sub fetch_once {
     my ($url) = @_;
 
     # 用列表形式调用，不经过 shell，避免 URL 里的字符被解释
@@ -37,6 +37,20 @@ sub fetch {
     close $fh;
     die "Failed to fetch $url\n" unless defined $content && length $content;
     return $content;
+}
+
+# 构建期从 raw.githubusercontent.com 抓插件，这个域名偶尔抽风，
+# 一次失败就会让整个镜像构建失败（CI 上表现为测试任务整片变红）。
+# 多试一次，把它变成"慢一点"而不是"失败"。
+sub fetch {
+    my ($url) = @_;
+
+    my $content = eval { fetch_once($url) };
+    return $content if defined $content && length $content;
+
+    warn "Fetch failed for $url, retrying once...\n";
+    sleep 3;
+    return fetch_once($url);
 }
 
 # 够用的 SemVer 排序键（registry 的版本键都是 X.Y.Z 形式）
