@@ -347,17 +347,16 @@ export function drawCallback() {
             // But don't fire this if we're coming from popstate
             isComingFromPopstate = false;
         } else {
-            let params = buildURLParameters();
-            // don't push duplicate state entries, because that would wipe out forward history and
-            // require multiple 'back' presses to go back)
-            if (params === "?") {
-                // special case for empty search params: window.location.search is "" if there are
-                // no search params, even if window.location ends with '?'
-                if (window.location.search !== "") {
-                    window.history.pushState(null, null, "/");
-                }
-            } else if (params !== window.location.search) {
-                window.history.pushState(null, null, params);
+            const params = buildURLParameters();
+            // buildURLParameters always ends with an '&' (every parameter appends one),
+            // while a URL typed into the address bar, or restored by a reload, never
+            // does. Comparing the two raw strings is therefore always unequal, which
+            // pushed a duplicate entry on every load: the reload added one, so going
+            // back needed extra presses and forward history was wiped.
+            const target = params === "?" ? "/" : `/${params}`;
+            const current = `${window.location.pathname}${window.location.search}`;
+            if (target !== current) {
+                window.history.pushState(null, null, target);
             }
         }
 
