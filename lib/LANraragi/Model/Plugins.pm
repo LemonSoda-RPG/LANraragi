@@ -878,7 +878,10 @@ sub validate_managed_plugin {
 sub _sha256_of_file {
     my ($path) = @_;
 
-    open( my $fh, '<:raw', $path ) or return undef;
+    # Bare return, not `return undef`: in list context the latter hands back a
+    # one-element list that tests true, so a caller checking the result would
+    # take an unreadable file for a successful read. (perlcritic PBP 199)
+    open( my $fh, '<:raw', $path ) or return;
     local $/;
     my $content = <$fh>;
     close $fh;
