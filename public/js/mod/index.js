@@ -891,14 +891,26 @@ function addArchivesToTank(tankId, arcIds) {
 
 // #region Periodic checks (Update notifications, progression migration)
 
+// GitHub is the one host this page talks to that we do not control, and on
+// networks where it is slow or blackholed the request can stay open for
+// minutes. Anything that waits for the page to go quiet then never sees it
+// happen, so bound both calls and let them fail like any other network error.
+const GITHUB_FETCH_TIMEOUT_MS = 10000;
+const GITHUB_RELEASES_API = "https://api.github.com/repos/difegue/lanraragi/releases/latest";
+
+function fetchGithubRelease() {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), GITHUB_FETCH_TIMEOUT_MS);
+    return fetch(GITHUB_RELEASES_API, { method: "GET", signal: controller.signal })
+        .finally(() => clearTimeout(timer));
+}
+
 /**
  * Check the GitHub API to see if an update was released.
  * If so, flash another friendly notification inviting the user to check it out
  */
 export function checkVersion() {
-    const githubAPI = "https://api.github.com/repos/difegue/lanraragi/releases/latest";
-
-    fetch(githubAPI)
+    fetchGithubRelease()
         .then((response) => {
             if (response.ok) {
                 return response.json();
@@ -953,7 +965,7 @@ export function fetchChangelog() {
     if (localStorage.lrrVersion !== serverVersion) {
         localStorage.lrrVersion = serverVersion;
 
-        fetch("https://api.github.com/repos/difegue/lanraragi/releases/latest", { method: "GET" })
+        fetchGithubRelease()
             .then((response) => {
                 if (response.ok) {
                     return response.json();
