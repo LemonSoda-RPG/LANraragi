@@ -482,6 +482,12 @@ sub update_progress {
             $redis->hset( $id, "lastreadtime", $time );
             $redis->quit();
 
+            # Opening an archive is what "new" means being over, and until this
+            # ran the listing kept reporting it as unread and unused. set_isnew
+            # also drops the cached listing, which still carried the old progress
+            # and the old flag.
+            set_isnew( $id, "false" );
+
             # Update total pages read statistic
             $redis_cfg->incr("LRR_TOTALPAGESTAT");
             $redis_cfg->quit();
