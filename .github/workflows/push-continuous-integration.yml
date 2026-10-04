@@ -71,11 +71,26 @@ jobs:
         with:
           context: lanraragi
           file: lanraragi/tools/build/docker/Dockerfile
-          tags: lanraragi:ci
+          tags: lanraragi:ci-${{ github.sha }}
           outputs: type=docker,dest=${{ runner.temp }}/lanraragi-ci.tar
           cache-from: type=gha,scope=buildkit-linux-amd64
       - name: Load LRR Docker image
         run: docker load -i "${{ runner.temp }}/lanraragi-ci.tar"
+      # A reused image name once made this job test the previous commit: the
+      # build/load steps were green, but the container reported the version from
+      # an older build (0.9.82 while the commit said 0.9.83). Verify the image we
+      # are about to test matches the checkout, so a stale image fails here in
+      # seconds instead of surfacing as unrelated test failures 22 minutes later.
+      - name: Verify the built image matches this commit
+        run: |
+          expected=$(jq -r .version lanraragi/package.json)
+          actual=$(docker run --rm --entrypoint sh "lanraragi:ci-${GITHUB_SHA}" \
+            -c "sed -n 's/.*\"version\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p' package.json | head -1")
+          echo "package.json says $expected, image says $actual"
+          if [ "$expected" != "$actual" ]; then
+            echo "::error::the loaded lanraragi image does not match this commit"
+            exit 1
+          fi
       - name: Checkout aio-lanraragi integration tests
         uses: actions/checkout@v6
         with:
@@ -102,7 +117,7 @@ jobs:
           cd aio-lanraragi/integration_tests
           export CI=true
           uv run pytest tests --log-cli-level=INFO \
-            --image lanraragi:ci \
+            --image "lanraragi:ci-${GITHUB_SHA}" \
             --staging "$GITHUB_WORKSPACE/staging" \
             --server-logs "$GITHUB_WORKSPACE/server-logs" \
             --cache-backend valkey \

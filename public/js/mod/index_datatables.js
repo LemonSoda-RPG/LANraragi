@@ -348,11 +348,10 @@ export function drawCallback() {
             isComingFromPopstate = false;
         } else {
             const params = buildURLParameters();
-            // buildURLParameters always ends with an '&' (every parameter appends one),
-            // while a URL typed into the address bar, or restored by a reload, never
-            // does. Comparing the two raw strings is therefore always unequal, which
-            // pushed a duplicate entry on every load: the reload added one, so going
-            // back needed extra presses and forward history was wiped.
+            // compare against the URL that is already loaded, so a draw that did
+            // not actually change the search does not add a history entry (an
+            // extra entry makes the user press back twice, and reloading then
+            // wipes whatever forward entry the back button left behind)
             const target = params === "?" ? "/" : `/${params}`;
             const current = `${window.location.pathname}${window.location.search}`;
             if (target !== current) {
@@ -386,18 +385,21 @@ export function buildURLParameters() {
 
     const encodedSearch = encodeURIComponent(dataTable.search());
 
-    // Check each parameter and append them to the URL if they exist
-    let params = "?";
-    if (page !== 1) params += `p=${page}&`;
+    // Check each parameter and append it if it exists. Built as a list and
+    // joined rather than appended with a trailing '&': the result is compared
+    // against window.location.search to decide whether the URL really changed,
+    // and a trailing '&' made that comparison always unequal.
+    const parts = [];
+    if (page !== 1) parts.push(`p=${page}`);
     if (sortby !== 0) {
         const encodedSortBy = encodeURIComponent(dataTable.settings()[0].aoColumns[sortby].sName);
-        params += `sort=${encodedSortBy}&`;
+        parts.push(`sort=${encodedSortBy}`);
     }
-    if (sortorder !== "asc") params += `sortdir=${sortorder}&`;
-    if (encodedSearch !== "") params += `q=${encodedSearch}&`;
-    if (cat !== "") params += `c=${cat}&`;
+    if (sortorder !== "asc") parts.push(`sortdir=${sortorder}`);
+    if (encodedSearch !== "") parts.push(`q=${encodedSearch}`);
+    if (cat !== "") parts.push(`c=${cat}`);
 
-    return params;
+    return parts.length === 0 ? "?" : `?${parts.join("&")}`;
 }
 
 export function consumeURLParameters() {

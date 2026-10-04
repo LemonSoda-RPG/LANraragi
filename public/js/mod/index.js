@@ -984,10 +984,18 @@ export function fetchChangelog() {
                     throw new Error(data.result);
                 }
 
-                document.getElementById("changelog").innerHTML = DOMPurify.sanitize(marked.parse(data.body, {
+                // Release notes are written on GitHub and often embed images from
+                // github.com. On an install that cannot reach GitHub - a firewalled
+                // or offline one - every such image stays pending indefinitely,
+                // which leaves the page never going idle. The notes read fine as
+                // text, so drop the images rather than fetch them.
+                const changelog = DOMPurify.sanitize(marked.parse(data.body, {
                     gfm: true,
                     breaks: true,
                 }));
+                const parsed = new DOMParser().parseFromString(changelog, "text/html");
+                parsed.querySelectorAll("img").forEach((img) => img.remove());
+                document.getElementById("changelog").innerHTML = parsed.body.innerHTML;
                 $("#updateOverlay").scrollTop(0);
 
                 $("#overlay-shade").fadeTo(150, 0.6, () => {
