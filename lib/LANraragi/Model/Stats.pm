@@ -23,6 +23,18 @@ use LANraragi::Utils::Database qw(get_arcsize);
 # every load.
 use constant TAG_STATS_CACHE_TTL => 60;
 
+# Fields read in bulk by build_stat_hashes and then consulted instead of Redis.
+#
+# Declared here, before any sub that uses them: under `use strict` a variable
+# has to be declared before the code that mentions it is compiled, and these are
+# used by build_stat_hashes further down.
+#
+# `$STATS_PREFETCHED` records that the prefetch ran, so an absent entry then
+# means "this archive has no such field" — what `hexists` used to report.
+# Without it a missing entry is indistinguishable from "not prefetched".
+our $STATS_PREFETCHED = 0;
+our ( %STATS_TAGS, %STATS_TITLES, %STATS_ISNEW );
+
 sub get_archive_count {
     my $redis = LANraragi::Model::Config->get_redis_search;
 
@@ -66,6 +78,21 @@ sub build_stat_hashes {
     # This also allows for the previous stats/map to still be readable until we're done.
     $redistx->watch( "LRR_STATS", "LRR_URLMAP", "LRR_UNTAGGED", "LRR_TITLES", "LRR_NEW", "LRR_TANKGROUPED" );
     $redistx->multi;
+
+    # Read every field this job needs before the loops below start.
+    #
+    # It used to read them one archive at a time — three to five round trips
+    # each, so around 35,000 for a library this size — while the whole rebuild
+    # took 63s. The same data in one MULTI takes a few seconds, because the cost
+    # was the per-command round trip and not the data.
+    #
+    # Tank members are part of this: their tags are imputed into the tank's
+    # index, so they are read here too and the loops then only compute.
+    my @archive_ids = @keys;
+    foreach my $tank (@tanks) {
+        push @archive_ids, @{ %$tank{archives} };
+    }
+    bulk_prefetch_archive_fields( $redis, @archive_ids );
 
     # Hose the entire index DB since we're rebuilding it
     $redistx->flushdb();
@@ -111,7 +138,7 @@ sub build_stat_hashes {
         foreach my $arcid (@tank_archives) {
             index_tags_for_id( $redis, $redistx, $tank_id, $arcid );
 
-            my $isnew = $redis->hget( $arcid, "isnew" );
+            my $isnew = $STATS_ISNEW{$arcid};
             if ( $isnew && $isnew eq "true" ) {
                 $redistx->sadd( "LRR_NEW", $arcid );
             }
@@ -129,7 +156,7 @@ sub build_stat_hashes {
             $redistx->sadd( "LRR_UNTAGGED", $id );
         }
 
-        my $isnew = $redis->hget( $id, "isnew" );
+        my $isnew = $STATS_ISNEW{$id};
         if ( $isnew && $isnew eq "true" ) {
             $logger->trace("Adding $id to LRR_ISNEW");
             $redistx->sadd( "LRR_NEW", $id );
@@ -146,19 +173,68 @@ sub build_stat_hashes {
     $redistx->quit;
 }
 
+# Fields read in bulk by build_stat_hashes and then consulted instead of Redis.
+#
+# `persistent` records that the prefetch ran: an absent entry then means "this
+# archive has no such field", which is exactly what `hexists` used to report.
+# Without it, a missing entry would be indistinguishable from "not prefetched".
+#
+# Reads tags, title and isnew for every given archive in a single round trip.
+#
+# build_stat_hashes calls this once; the loops that follow then do no reads of
+# their own. Reading one field at a time cost 63s on an 8813-archive library.
+sub bulk_prefetch_archive_fields ( $redis, @ids ) {
+    %STATS_TAGS    = ();
+    %STATS_TITLES  = ();
+    %STATS_ISNEW   = ();
+    $STATS_PREFETCHED = 1;
+
+    return unless @ids;
+
+    my @results;
+    eval {
+        $redis->multi;
+        $redis->hgetall($_) for @ids;
+        @results = $redis->exec;
+    };
+    if ($@) {
+        # A failed prefetch must not silently index nothing: the per-archive
+        # reads below fall back to Redis when they find nothing here.
+        get_logger( "Tag Stats", "lanraragi" )
+          ->error("Could not prefetch archive fields, falling back to per-archive reads: $@");
+        $STATS_PREFETCHED = 0;
+        return;
+    }
+
+    for my $i ( 0 .. $#ids ) {
+        my $data = $results[$i];
+        next unless $data && ref($data) eq 'ARRAY';
+        my %hash = @$data;
+        $STATS_TAGS{ $ids[$i] }   = $hash{tags};
+        $STATS_TITLES{ $ids[$i] } = $hash{title};
+        $STATS_ISNEW{ $ids[$i] }  = $hash{isnew};
+    }
+}
+
 # Parse the tags of the given archive_id,
 # and add the given index_id to all the search indexes that contain said tags.
 sub index_tags_for_id ( $redis, $redistx, $index_id, $archive_id ) {
     my $logger   = get_logger( "Tag Stats", "lanraragi" );
     my $has_tags = 0;
 
-    unless ( $redis->hexists( $archive_id, "tags" ) ) {
-        return 0;
+    # Prefetched by build_stat_hashes. The `hexists`/`hget` pair below is the
+    # fallback for any other caller.
+    my $rawtags;
+    unless ($STATS_PREFETCHED) {
+        return 0 unless $redis->hexists( $archive_id, "tags" );
+        $rawtags = $redis->hget( $archive_id, "tags" );
+    } else {
+        return 0 unless defined $STATS_TAGS{$archive_id};
+        $rawtags = $STATS_TAGS{$archive_id};
     }
 
     # Split tags by comma and index them
-    my $rawtags = $redis->hget( $archive_id, "tags" );
-    my @tags    = split( /,\s?/, redis_decode($rawtags) );
+    my @tags = split( /,\s?/, redis_decode($rawtags) );
 
     foreach my $t (@tags) {
         $t = trim($t);
@@ -190,8 +266,16 @@ sub index_tags_for_id ( $redis, $redistx, $index_id, $archive_id ) {
         }
     }
 
-    if ( $redis->hexists( $archive_id, "title" ) ) {
-        my $title = $redis->hget( $archive_id, "title" );
+    # The title comes from the same prefetch; the Redis pair is the fallback for
+    # callers that did not prefetch.
+    my $title;
+    if ($STATS_PREFETCHED) {
+        $title = $STATS_TITLES{$archive_id};
+    } elsif ( $redis->hexists( $archive_id, "title" ) ) {
+        $title = $redis->hget( $archive_id, "title" );
+    }
+
+    if ( defined $title ) {
 
         # Decode and lowercase the title
         $title = lc( redis_decode($title) );

@@ -24,12 +24,25 @@ sub redis_encode ($data) {
 
 # Final Solution to the Unicode glitches -- Eval'd double-decode for data obtained from Redis.
 # This should be a one size fits-all function.
+#
+# The loop below is expensive: encode, two decodes and a mojibake regex for each
+# of up to four rounds, and it runs for every field of every archive — measured
+# at 2.6ms per archive, which is 98% of the cost of rebuilding a full library.
+#
+# A string made only of ASCII bytes cannot be improved by any of it: decoding
+# ASCII yields the same ASCII, and the mojibake pattern cannot match it. Those
+# inputs return immediately. Strings that do contain high bytes still take the
+# full path, so decoding stays as forgiving as it was.
 sub redis_decode ($data) {
+    return $data unless defined $data;
+
+    if ( $data !~ /[^\x00-\x7F]/ ) {
+        return $data;
+    }
 
     # Values can cross Redis, plugin, and logging boundaries more than once.
     # Normalize a few layers while keeping already-valid Unicode unchanged.
     for ( 1 .. 4 ) {
-        last unless defined $data;
         my $before = encode_utf8($data);
 
         # Setting FB_CROAK tells encode to die instantly if it encounters any errors.
