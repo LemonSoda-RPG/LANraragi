@@ -234,7 +234,18 @@ sub setup_redis_mock {
             return exists $datamodel{$key} ? 1 : 0;
         }
     );
-    $redis->mock( 'hexists', sub { 1 } );
+    $redis->mock(
+        'hexists',    # $redis->hexists => check if field exists in hash stored at key
+        sub {
+            my $self = shift;
+            my ( $key, $field ) = @_;
+
+            return 0 unless exists $datamodel{$key};
+            return 0 unless ref $datamodel{$key} eq 'HASH';
+
+            return exists $datamodel{$key}{$field} ? 1 : 0;
+        }
+    );
     $redis->mock(
         'hset',    # $redis->hset => set hash field value in datamodel
         sub {
@@ -249,10 +260,35 @@ sub setup_redis_mock {
             return 1;
         }
     );
-    $redis->mock( 'quit',    sub { 1 } );
-    $redis->mock( 'select',  sub { 1 } );
-    $redis->mock( 'flushdb', sub { 1 } );
-    $redis->mock( 'zincrby', sub { 1 } );
+    $redis->mock( 'quit',   sub { 1 } );
+    $redis->mock( 'select', sub { 1 } );
+
+    # flushdb is what the stat rebuild uses to hose the index database before
+    # rebuilding it. A no-op there means every rebuild appends to the previous
+    # index instead of replacing it, so searches end up with duplicate IDs.
+    #
+    # The search connection is a separate database in production, so only the
+    # keys the stat job owns are dropped here: the archive hashes, the config
+    # and the category sets are the equivalent of the main DB.
+    $redis->mock(
+        'flushdb',
+        sub {
+            delete $datamodel{$_} for grep { /^INDEX_/ || ( /^LRR_/ && $_ ne 'LRR_CONFIG' ) } keys %datamodel;
+            return 1;
+        }
+    );
+
+    $redis->mock(
+        'zincrby',    # $redis->zincrby => increment the score of a sorted set member
+        sub {
+            my $self = shift;
+            my ( $key, $increment, $member ) = @_;
+
+            $datamodel{$key} ||= {};
+            $datamodel{$key}{$member} = ( $datamodel{$key}{$member} // 0 ) + $increment;
+            return $datamodel{$key}{$member};
+        }
+    );
     $redis->mock(
         'zrem',    # $redis->zrem => remove members from sorted set
         sub {
@@ -307,16 +343,63 @@ sub setup_redis_mock {
             return $removed;
         }
     );
+    # The mock cannot execute Lua, so any script_load/evalsha reply would be
+    # empty and the search code would try to decode nothing. Fail loudly
+    # instead, which is what a Redis without scripting does, and let the
+    # documented fallbacks (zrangebyscore/hget based) do the work.
+    $redis->mock( 'script_load', sub { die "Lua scripting is unavailable in the test mock\n" } );
+    $redis->mock( 'evalsha',     sub { die "Lua scripting is unavailable in the test mock\n" } );
+
+    $redis->mock(
+        'zrangebyscore',
+        sub {
+            my ( $self, $key, $min, $max ) = @_;
+            my $scores = $datamodel{$key} || {};
+            my @members =
+              sort { $scores->{$a} <=> $scores->{$b} }
+              grep { my $s = $scores->{$_}; $s >= $min && ( $max eq "+inf" || $s <= $max ) }
+              keys %$scores;
+            return @members;
+        }
+    );
+
     $redis->mock( 'watch',   sub { 1 } );
     $redis->mock( 'set',     sub { 1 } );
     $redis->mock( 'hlen',    sub { 1337 } );
     $redis->mock( 'dbsize',  sub { 1337 } );
 
+    # Plain keys with an expiry, used by the lastread search cache. Values live
+    # in their own store so a string value never looks like a hash to hget.
+    my %keyvalue;
+    $redis->mock(
+        'setex',    # $redis->setex => set key with value and TTL
+        sub {
+            my ( $self, $key, $ttl, $value ) = @_;
+            $keyvalue{$key} = $value;
+            return 1;
+        }
+    );
+    $redis->mock(
+        'get',    # $redis->get => get the value of key
+        sub {
+            my ( $self, $key ) = @_;
+            return $keyvalue{$key};
+        }
+    );
+
+    # MULTI/EXEC reply queue.
+    #
+    # Commands that answer inside a transaction queue their reply here (see
+    # hgetall below), and exec hands the queued replies back in call order.
+    # The queue therefore has to start and end empty for every transaction:
+    # leaving replies behind makes the next exec return an older transaction's
+    # replies first, which pairs archive IDs with the wrong hashes.
     $redis->mock(
         'multi',
         sub {
             my $self = shift;
             $self->{ismulti} = 1;
+            $self->{results} = [];
         }
     );
 
@@ -325,9 +408,13 @@ sub setup_redis_mock {
         sub {
             my $self = shift;
             $self->{ismulti} = 0;
-            my @a = values @{ $self->{results} };
 
             # Return the values directly to match Redis module behavior, instead of boxing them in an array
+            # Undef replies are skipped: Redis::Client parses a lone undef as a
+            # transaction error, and a command that answered nothing (all the
+            # mock's write commands) is not an error.
+            my @a = grep { defined } values @{ $self->{results} };
+            $self->{results} = [];
             return @a;
         }
     );
