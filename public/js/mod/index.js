@@ -895,9 +895,7 @@ function addArchivesToTank(tankId, arcIds) {
 // networks where it is slow or blackholed the request can stay open for
 // minutes. Anything that waits for the page to go quiet then never sees it
 // happen, so bound both calls and let them fail like any other network error.
-// Kept short on purpose: nobody is waiting for a version check, and a longer
-// leash would only postpone every page load on a slow connection.
-const GITHUB_FETCH_TIMEOUT_MS = 4000;
+const GITHUB_FETCH_TIMEOUT_MS = 10000;
 const GITHUB_RELEASES_API = "https://api.github.com/repos/difegue/lanraragi/releases/latest";
 
 function fetchGithubRelease() {

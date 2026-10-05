@@ -81,13 +81,6 @@ export function initializeAll() {
     // Store the page size in localStorage for use in the reader
     localStorage.setItem("datatablesPageSize", Index.pageSize.toString());
 
-    // Apply the URL's search parameters before the table is created, so its
-    // first draw already shows the right search. Creating the table draws it
-    // once immediately, and if ?q=... were applied afterwards that first draw
-    // would write a search-less URL over the one the user loaded - adding a
-    // stray history entry that back and forward then trip over.
-    consumeURLParameters();
-
     // Datatables configuration
     dataTable = $(".datatables").DataTable({
         serverSide: true,
@@ -121,6 +114,9 @@ export function initializeAll() {
         createdRow: createdRow,
         columns,
     });
+
+    // If the url has parameters, handle them now by doing the matching search.
+    consumeURLParameters();
 }
 
 /**
@@ -130,12 +126,6 @@ export function initializeAll() {
  * @param {number} page Page to load
  */
 export function doSearch(page) {
-    // consumeURLParameters runs before the table exists, and a caller can ask
-    // for a search before initializeAll finished; there is nothing to draw yet.
-    if (typeof (dataTable) === "undefined" || !dataTable.column) {
-        return;
-    }
-
     // Page setup calls this several times in a row (and clicking around can too);
     // only the last call of a burst needs to reach the server.
     clearTimeout(pendingSearch);
