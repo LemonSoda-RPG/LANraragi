@@ -72,7 +72,7 @@ export function initializeStamps() {
             state.markerMode = false;
             if (result.isConfirmed && result.value.trim() !== "") {
                 const { arcId, localPage } = getArchiveForPage(page);
-                Server.callAPI(`/api/archives/${arcId}/stamps/${localPage}?position=${markerData.x},${markerData.y}&content=${result.value}`, 
+                Server.callAPI(`/api/archives/${arcId}/stamps/${localPage}?position=${markerData.x},${markerData.y}&content=${result.value}`,
                     "PUT", "Stamp added!", I18N.StampError,
                     (data) => {
                         markerData.id = data["stamp_id"];
@@ -225,7 +225,6 @@ function createMarkerElement(markerData, index) {
         const yPercent = (y / imgRect.height) * 100;
 
         const i = marker.dataset.index;
-        let inputValue = markerData.name;
 
         Server.callAPI(`/api/stamps/${markerData.id}?position=${xPercent},${yPercent}`, "PUT", "Stamp updated!", I18N.StampError,
             () => {
@@ -381,7 +380,7 @@ function initContextMenu() {
             e.preventDefault();
             e.stopPropagation();
             return {
-                callback: function (key, options) {
+                callback: function (key, _options) {
                     handleMarkerContextMenu(key, $(this).attr("data-index"));
                 },
                 items: {

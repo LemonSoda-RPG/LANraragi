@@ -89,7 +89,7 @@ Duplicates.pollMinionJob = function (job) {
     );
 };
 
-Duplicates.drawCallbackDataTable = function (settings) {
+Duplicates.drawCallbackDataTable = function (_settings) {
     var groupColumn = 0;
     var api = this.api();
     var rows = api.rows({ page: "current" }).nodes();

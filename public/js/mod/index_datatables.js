@@ -291,10 +291,10 @@ export function initializeThumbView() {
  * Modifications when a row is created
  * @param {HTMLElement} row matching DataTables row
  * @param {[] | object} data raw data
- * @param {number} dataIndex index of row
- * @param {Node[]} cells cells for the column
+ * @param {number} _dataIndex index of row
+ * @param {Node[]} _cells cells for the column
  */
-export function createdRow(row, data, dataIndex, cells) {
+export function createdRow(row, data, _dataIndex, _cells) {
     // Update row with id and context-menu class
     row.id = data.arcid || data.id;
     row.classList.add("context-menu");
@@ -352,7 +352,9 @@ export function drawCallback() {
             // not actually change the search does not add a history entry (an
             // extra entry makes the user press back twice, and reloading then
             // wipes whatever forward entry the back button left behind)
-            const target = params === "?" ? "/" : `/${params}`;
+            // Empty search: keep the current path (the app can be served under a
+            // prefix), only drop the trailing '?' from the query string.
+            const target = params === "?" ? window.location.pathname : `/${params}`;
             const current = `${window.location.pathname}${window.location.search}`;
             if (target !== current) {
                 window.history.pushState(null, null, target);
